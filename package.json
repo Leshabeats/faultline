@@ -1,0 +1,47 @@
+{
+  "name": "faultline",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Animated system-design interview practice with deterministic failures, hidden cases, and an AI interviewer.",
+  "license": "MIT",
+  "homepage": "https://leshabeats.github.io/faultline/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Leshabeats/faultline.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Leshabeats/faultline/issues"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "keywords": [
+    "system-design",
+    "interview",
+    "distributed-systems",
+    "simulation",
+    "react-flow"
+  ],
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "test": "vitest",
+    "test:run": "vitest run"
+  },
+  "dependencies": {
+    "@xyflow/react": "12.4.4",
+    "lucide-react": "0.468.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "18.3.18",
+    "@types/react-dom": "18.3.5",
+    "@vitejs/plugin-react": "4.6.0",
+    "typescript": "5.7.2",
+    "vite": "6.4.3",
+    "vitest": "3.2.6"
+  }
+}

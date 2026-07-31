@@ -1,0 +1,128 @@
+import type { SystemFlowEdge, SystemFlowNode } from './types'
+
+export const seedNodes: SystemFlowNode[] = [
+  {
+    id: 'clients',
+    type: 'system',
+    position: { x: 20, y: 230 },
+    data: {
+      kind: 'client',
+      label: 'Clients',
+      health: 'healthy',
+      detail: '100k req/s',
+      load: 10,
+    },
+  },
+  {
+    id: 'edge',
+    type: 'system',
+    position: { x: 230, y: 230 },
+    data: {
+      kind: 'gateway',
+      label: 'Edge',
+      health: 'healthy',
+      detail: '7ms edge',
+      load: 10,
+    },
+  },
+  {
+    id: 'api',
+    type: 'system',
+    position: { x: 440, y: 230 },
+    data: {
+      kind: 'service',
+      label: 'Short Link API',
+      health: 'degraded',
+      detail: 'Saturated',
+      load: 10,
+    },
+  },
+  {
+    id: 'cache',
+    type: 'system',
+    position: { x: 665, y: 230 },
+    selected: true,
+    data: {
+      kind: 'cache',
+      label: 'Redis',
+      health: 'failed',
+      detail: 'Unavailable',
+      load: 10,
+    },
+  },
+  {
+    id: 'database',
+    type: 'system',
+    position: { x: 900, y: 230 },
+    data: {
+      kind: 'database',
+      label: 'Primary DB',
+      health: 'hot',
+      detail: '96% CPU',
+      load: 10,
+    },
+  },
+  {
+    id: 'queue',
+    type: 'system',
+    position: { x: 625, y: 480 },
+    data: {
+      kind: 'queue',
+      label: 'Queue',
+      health: 'healthy',
+      detail: '4.8k queued',
+      load: 10,
+    },
+  },
+]
+
+export const seedEdges: SystemFlowEdge[] = [
+  {
+    id: 'clients-edge',
+    type: 'traffic',
+    source: 'clients',
+    target: 'edge',
+    sourceHandle: 'right',
+    targetHandle: 'left',
+    label: '100k req/s',
+    data: { tone: 'healthy', intensity: 10, paused: false },
+  },
+  {
+    id: 'edge-api',
+    type: 'traffic',
+    source: 'edge',
+    target: 'api',
+    sourceHandle: 'right',
+    targetHandle: 'left',
+    data: { tone: 'healthy', intensity: 10, paused: false },
+  },
+  {
+    id: 'api-cache',
+    type: 'traffic',
+    source: 'api',
+    target: 'cache',
+    sourceHandle: 'right',
+    targetHandle: 'left',
+    label: '82% miss',
+    data: { tone: 'warning', intensity: 10, paused: false },
+  },
+  {
+    id: 'cache-database',
+    type: 'traffic',
+    source: 'cache',
+    target: 'database',
+    sourceHandle: 'right',
+    targetHandle: 'left',
+    label: '842 ms',
+    data: { tone: 'critical', intensity: 10, paused: false },
+  },
+  {
+    id: 'api-queue',
+    type: 'traffic',
+    source: 'api',
+    target: 'queue',
+    sourceHandle: 'bottom',
+    targetHandle: 'top',
+    data: { tone: 'healthy', intensity: 3, paused: false },
+  },
+]

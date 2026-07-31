@@ -1,0 +1,41 @@
+name: Bug report
+description: Report reproducible behavior that does not match Faultline's contract.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for taking the time to make Faultline more reliable.
+  - type: textarea
+    id: behavior
+    attributes:
+      label: What happened?
+      description: Include the challenge, topology, load, fault, and visible result.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      placeholder: "1. Open…\n2. Add…\n3. Select…"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Browser and operating system
+    validations:
+      required: true
+  - type: checkboxes
+    id: security
+    attributes:
+      label: Security check
+      options:
+        - label: This report does not disclose a security vulnerability or secret.
+          required: true
