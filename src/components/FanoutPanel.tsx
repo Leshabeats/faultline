@@ -18,6 +18,7 @@ import type {
   FanoutWorkerCount,
   NewsFeedBottleneck,
   NewsFeedReport,
+  Locale,
 } from '../domain/system'
 import { NEWS_FEED_MODEL_LABEL, normalizeNewsFeedTuning } from '../newsFeed/model'
 
@@ -25,6 +26,7 @@ export type FanoutPrediction = NewsFeedBottleneck
 
 interface FanoutPanelProps {
   open: boolean
+  locale: Locale
   tuning: CapacityTuning
   report: NewsFeedReport
   baseline: NewsFeedReport
@@ -107,6 +109,7 @@ function SegmentedControl<T extends string | number>({
 
 export function FanoutPanel({
   open,
+  locale,
   tuning,
   report,
   baseline,
@@ -122,6 +125,7 @@ export function FanoutPanel({
   onOpenInterviewer,
   onClose,
 }: FanoutPanelProps) {
+  const ru = locale === 'ru'
   const values = normalizeNewsFeedTuning(tuning)
   const correctPrediction = prediction === baseline.bottleneck
   const costDelta = report.cost.total - baseline.cost.total
@@ -131,7 +135,7 @@ export function FanoutPanel({
       <div className="sheet-handle" aria-hidden="true" />
       <header className="interviewer-header bottleneck-header">
         <div>
-          <strong>Celebrity Defense</strong>
+          <strong>{ru ? 'Защита от скачка' : 'Celebrity Defense'}</strong>
           <span>{NEWS_FEED_MODEL_LABEL}</span>
         </div>
         <div className="panel-header-actions">
@@ -146,9 +150,9 @@ export function FanoutPanel({
 
       <div className="interviewer-body bottleneck-body">
         <div className="defense-step-rail" aria-label="Defense progress">
-          <span className="is-complete"><i>1</i> Predict</span>
-          <span className={predictionLocked ? 'is-active' : ''}><i>2</i> Tune</span>
-          <span><i>3</i> Defend</span>
+          <span className="is-complete"><i>1</i> {ru ? 'Прогноз' : 'Predict'}</span>
+          <span className={predictionLocked ? 'is-active' : ''}><i>2</i> {ru ? 'Настройка' : 'Tune'}</span>
+          <span><i>3</i> {ru ? 'Защита' : 'Defend'}</span>
         </div>
 
         {!predictionLocked ? (
@@ -156,8 +160,8 @@ export function FanoutPanel({
             <div className="defense-heading">
               <Sparkles size={22} />
               <div>
-                <h2>What breaks first?</h2>
-                <p>One post. 50 million followers. Commit before seeing the model.</p>
+                <h2>{ru ? 'Что сломается первым?' : 'What breaks first?'}</h2>
+                <p>{ru ? 'Один пост. 50 миллионов подписчиков. Сначала зафиксируйте прогноз.' : 'One post. 50 million followers. Commit before seeing the model.'}</p>
               </div>
             </div>
             <div className="prediction-options" role="radiogroup" aria-label="Predicted first bottleneck">
@@ -179,11 +183,11 @@ export function FanoutPanel({
               ))}
             </div>
             <label className="prediction-rationale">
-              <span>Your reasoning</span>
+              <span>{ru ? 'Ваше рассуждение' : 'Your reasoning'}</span>
               <textarea
                 value={rationale}
                 onChange={(event) => onRationaleChange(event.target.value)}
-                placeholder="Name the multiplier that drives your prediction…"
+                placeholder={ru ? 'Назовите множитель, определяющий прогноз…' : 'Name the multiplier that drives your prediction…'}
               />
             </label>
             <button
@@ -192,7 +196,7 @@ export function FanoutPanel({
               disabled={!prediction || rationale.trim().length < 8}
               onClick={onCommitPrediction}
             >
-              Commit prediction <ChevronDown size={17} />
+              {ru ? 'Зафиксировать прогноз' : 'Commit prediction'} <ChevronDown size={17} />
             </button>
           </section>
         ) : (
@@ -220,41 +224,41 @@ export function FanoutPanel({
               </header>
               <div className="defense-metrics">
                 <div className={report.metrics.p99 < baseline.metrics.p99 ? 'defense-metric is-good' : 'defense-metric is-warning'}>
-                  <span>Freshness p99</span>
+                  <span>{ru ? 'Свежесть p99' : 'Freshness p99'}</span>
                   <strong>{report.metrics.p99 >= 1_000 ? `${(report.metrics.p99 / 1_000).toFixed(1)} s` : `${report.metrics.p99} ms`}</strong>
-                  <small>was {baseline.metrics.p99 >= 1_000 ? `${(baseline.metrics.p99 / 1_000).toFixed(1)} s` : `${baseline.metrics.p99} ms`}</small>
+                  <small>{ru ? 'было' : 'was'} {baseline.metrics.p99 >= 1_000 ? `${(baseline.metrics.p99 / 1_000).toFixed(1)} s` : `${baseline.metrics.p99} ms`}</small>
                 </div>
                 <div className={report.metrics.queueDepth < baseline.metrics.queueDepth ? 'defense-metric is-good' : 'defense-metric is-warning'}>
-                  <span>Backlog</span>
+                  <span>{ru ? 'Отставание' : 'Backlog'}</span>
                   <strong>{compact.format(report.metrics.queueDepth)}</strong>
-                  <small>was {compact.format(baseline.metrics.queueDepth)}</small>
+                  <small>{ru ? 'было' : 'was'} {compact.format(baseline.metrics.queueDepth)}</small>
                 </div>
                 <div className="defense-metric">
-                  <span>Deliveries/s</span>
+                  <span>{ru ? 'Доставок/с' : 'Deliveries/s'}</span>
                   <strong>{compact.format(report.metrics.throughput)}</strong>
-                  <small>was {compact.format(baseline.metrics.throughput)}</small>
+                  <small>{ru ? 'было' : 'was'} {compact.format(baseline.metrics.throughput)}</small>
                 </div>
               </div>
               <p className={`cost-delta ${costDelta > 0 ? 'is-increase' : 'is-saving'}`}>
                 <CircleDollarSign size={15} />
                 {costDelta === 0
-                  ? 'Same monthly envelope as the untuned design.'
-                  : `${costDelta > 0 ? '+' : '−'}${currency.format(Math.abs(costDelta))}/mo versus untuned.`}
+                  ? ru ? 'Та же месячная стоимость, что без настройки.' : 'Same monthly envelope as the untuned design.'
+                  : `${costDelta > 0 ? '+' : '−'}${currency.format(Math.abs(costDelta))}${ru ? '/мес относительно базы.' : '/mo versus untuned.'}`}
               </p>
             </section>
 
             <section className="tuning-section">
               <div className="section-title-row">
                 <div>
-                  <h2>Tune the fan-out path</h2>
-                  <p>Every choice updates the spike and cost live.</p>
+                  <h2>{ru ? 'Настройте fan-out путь' : 'Tune the fan-out path'}</h2>
+                  <p>{ru ? 'Каждый выбор сразу меняет скачок и стоимость.' : 'Every choice updates the spike and cost live.'}</p>
                 </div>
                 <button type="button" onClick={onReset} aria-label="Reset fan-out tuning" title="Reset tuning">
                   <RotateCcw size={16} />
                 </button>
               </div>
               <SegmentedControl<FanoutStrategy>
-                label="Fan-out strategy"
+                label={ru ? 'Стратегия fan-out' : 'Fan-out strategy'}
                 value={values.strategy}
                 options={[
                   { value: 'write', label: 'Write' },
@@ -264,7 +268,7 @@ export function FanoutPanel({
                 onChange={(fanoutStrategy) => onTuningChange({ ...tuning, fanoutStrategy })}
               />
               <SegmentedControl<FanoutWorkerCount>
-                label="Workers"
+                label={ru ? 'Воркеры' : 'Workers'}
                 value={values.workers}
                 options={[
                   { value: 4, label: '4' },
@@ -274,7 +278,7 @@ export function FanoutPanel({
                 onChange={(fanoutWorkers) => onTuningChange({ ...tuning, fanoutWorkers })}
               />
               <SegmentedControl<FanoutBatchSize>
-                label="Batch size"
+                label={ru ? 'Размер батча' : 'Batch size'}
                 value={values.batchSize}
                 options={[
                   { value: 100, label: '100' },
@@ -284,7 +288,7 @@ export function FanoutPanel({
                 onChange={(fanoutBatchSize) => onTuningChange({ ...tuning, fanoutBatchSize })}
               />
               <SegmentedControl<CelebrityThreshold>
-                label="Celebrity threshold"
+                label={ru ? 'Порог знаменитости' : 'Celebrity threshold'}
                 value={values.celebrityThreshold}
                 options={[
                   { value: 100_000, label: '100k' },
@@ -294,7 +298,7 @@ export function FanoutPanel({
                 onChange={(celebrityThreshold) => onTuningChange({ ...tuning, celebrityThreshold })}
               />
               <div className="tuning-control tuning-toggle-row">
-                <span><UsersRound size={15} /> Idempotent delivery</span>
+                <span><UsersRound size={15} /> {ru ? 'Идемпотентная доставка' : 'Idempotent delivery'}</span>
                 <button
                   type="button"
                   role="switch"
@@ -309,7 +313,7 @@ export function FanoutPanel({
             </section>
 
             <details className="capacity-assumptions">
-              <summary><span>Why this estimate</span><ChevronDown size={16} /></summary>
+              <summary><span>{ru ? 'Почему такая оценка' : 'Why this estimate'}</span><ChevronDown size={16} /></summary>
               <dl>
                 <div><dt>Fan-out jobs</dt><dd>{compact.format(report.workload.fanoutJobsPerSecond)}/s</dd></div>
                 <div><dt>Worker load</dt><dd>{Math.round(report.utilization.workers * 100)}%</dd></div>
@@ -320,7 +324,7 @@ export function FanoutPanel({
             </details>
 
             <button className="defend-design" type="button" onClick={onDefend}>
-              <MessageCircle size={18} /> Defend this design
+              <MessageCircle size={18} /> {ru ? 'Защитить решение' : 'Defend this design'}
             </button>
           </>
         )}

@@ -35,10 +35,11 @@ export const DEFAULT_CAPACITY_TUNING: CapacityTuning = {
 export const CAPACITY_MODEL_LABEL = 'Calibrated model · Aug 2026'
 
 export interface CapacityModelInput {
-  loadMultiplier: 1 | 3 | 10
+  loadMultiplier: number
   fault: FaultMode
   tuning: CapacityTuning
   componentCounts?: Partial<Record<ComponentKind, number>>
+  replicaCounts?: Partial<Record<ComponentKind, number>>
   criticalPathConnected?: boolean
 }
 
@@ -56,9 +57,16 @@ export function estimateCapacity(input: CapacityModelInput): CapacityReport {
   const redirectRps = 10_000 * input.loadMultiplier
   const createRps = 100
   const cacheNodes = Math.max(1, normalizedCount(counts.cache, 1))
+  // Shards add capacity, but only independent replicas can survive a node loss.
+  // Fall back to capacity counts for older replays that predate replicaCounts.
+  const cacheReplicaCount = Math.max(
+    1,
+    normalizedCount(input.replicaCounts?.cache, cacheNodes),
+  )
   const serviceNodes = Math.max(1, normalizedCount(counts.service, 1))
   const gatewayNodes = Math.max(1, normalizedCount(counts.gateway, 1))
   const queueNodes = normalizedCount(counts.queue, 1)
+  const databaseShards = Math.max(1, normalizedCount(counts.database, 1))
   const pricingPack = resolvePricingPack(tuning.pricingPackId)
   const benchmarkPack = resolveBenchmarkPack(tuning.benchmarkPackId)
   const profile = benchmarkPack.capacities.databaseReadRps[tuning.databaseProfile]
@@ -66,7 +74,7 @@ export function estimateCapacity(input: CapacityModelInput): CapacityReport {
   const retryMultiplier = fault === 'retry-storm' ? 1.32 : 1
   const offeredRps = redirectRps * retryMultiplier
   const effectiveCacheHitRate = fault === 'cache-outage'
-    ? cacheNodes > 1
+    ? cacheReplicaCount > 1
       ? tuning.cacheHitRate * 0.62
       : 0
     : tuning.cacheHitRate
@@ -77,7 +85,7 @@ export function estimateCapacity(input: CapacityModelInput): CapacityReport {
   const queryWork = tuning.indexedLookup ? 1 : 5.2
   const replicaCapacity = 1 + tuning.readReplicas * 0.85
   const slowDatabasePenalty = fault === 'slow-database' ? 0.45 : 1
-  const databaseCapacity = profile.value * replicaCapacity * slowDatabasePenalty
+  const databaseCapacity = profile.value * replicaCapacity * databaseShards * slowDatabasePenalty
   const databaseDemand = databaseReadRps * queryWork + createRps * 4
   const databaseUtilization = databaseDemand / databaseCapacity
 
@@ -142,9 +150,9 @@ export function estimateCapacity(input: CapacityModelInput): CapacityReport {
     cacheAndQueue = cacheNodes * rates.cacheNodeMonthly +
       queueNodes * rates.queueNodeMonthly
     databaseCompute = rates.databaseNodeMonthly[tuning.databaseProfile] *
-      (1 + tuning.readReplicas * 0.82)
+      (1 + tuning.readReplicas * 0.82) * databaseShards
     databaseStorage = storageWithIndexes * rates.databaseStorageGiBMonth *
-      (1 + tuning.readReplicas)
+      (1 + tuning.readReplicas) * databaseShards
   } else {
     const rates = pricingPack.rates
     const secondsPerMonth = rates.hoursPerMonth * 60 * 60
@@ -164,16 +172,16 @@ export function estimateCapacity(input: CapacityModelInput): CapacityReport {
     edgeAndService = albMonthly + serviceNodes * serviceNodeMonthly
     cacheAndQueue = cacheNodes * rates.valkeyNodeHour * rates.hoursPerMonth + queueMonthly
     databaseCompute = rates.databaseNodeHour[tuning.databaseProfile] *
-      rates.hoursPerMonth * (1 + tuning.readReplicas)
+      rates.hoursPerMonth * (1 + tuning.readReplicas) * databaseShards
     databaseStorage = storageWithIndexes * rates.databaseStorageGiBMonth *
-      (1 + tuning.readReplicas)
+      (1 + tuning.readReplicas) * databaseShards
   }
   const total = edgeAndService + cacheAndQueue + databaseCompute + databaseStorage
   const monthlyRedirects = redirectRps * SECONDS_PER_MONTH
   const costPerMillion = total / (monthlyRedirects / 1_000_000)
 
   const bottleneck = selectBottleneck({
-    cache: fault === 'cache-outage' && cacheNodes === 1
+    cache: fault === 'cache-outage' && cacheReplicaCount === 1
       ? 1.2
       : Math.max(cacheUtilization, (1 - effectiveCacheHitRate) * 0.8),
     service: serviceUtilization,
@@ -242,6 +250,7 @@ export function estimateCapacity(input: CapacityModelInput): CapacityReport {
       '100 creates/s, five-year retention, and 200 B of raw link data per row.',
       `Capacity: ${benchmarkPack.label}; ${profile.authority} ${tuning.databaseProfile} database baseline.`,
       'Replica reads are 85% as efficient as primary reads.',
+      `${databaseShards} database shard${databaseShards === 1 ? '' : 's'}; each shard carries the selected replica profile and storage copy.`,
       pricingPack.rates.mode === 'aws-on-demand'
         ? 'AWS rates are verified; usage quantities remain modeled. On-demand only, 30-day month, no free tier or discounts.'
         : 'Component prices are scenario reference units, not a cloud-provider quote.',

@@ -33,6 +33,8 @@ import {
   type ComponentKind,
   type CapacityTuning,
   type FaultMode,
+  type Locale,
+  type LoadMultiplier,
   type ScenarioId,
   type TelemetryPoint,
   type TimelineEvent,
@@ -72,6 +74,8 @@ import {
   toReplayNode,
 } from './replay/presentation'
 import { verifyImportedAttempt } from './replay/verification'
+import { faultLabels as localizedFaultLabels, initialLocale, localizeNodeDetail, localizeNodeLabel, scenarioLabels } from './i18n'
+import { useTrafficRamp } from './simulation/useTrafficRamp'
 
 const toneForHealth = (health: ComponentHealth) => {
   if (health === 'failed' || health === 'hot') return 'critical' as const
@@ -87,26 +91,12 @@ const formatClock = (elapsedSeconds: number) => {
     .padStart(2, '0')}`
 }
 
-const initialEvents: TimelineEvent[] = [
+const initialEvents = (locale: Locale): TimelineEvent[] => [
   {
-    id: 'initial-cache-outage',
+    id: 'initial-ready',
     timestamp: '18:41',
-    title: 'Redis became unavailable',
-    detail: 'Cache node health check failed',
-    tone: 'critical',
-  },
-  {
-    id: 'initial-cache-miss',
-    timestamp: '18:40',
-    title: 'Cache miss rate elevated',
-    detail: '82% miss rate detected',
-    tone: 'warning',
-  },
-  {
-    id: 'initial-load',
-    timestamp: '18:39',
-    title: 'Load increased to 10×',
-    detail: 'Throughput is now 100k req/s',
+    title: locale === 'ru' ? 'Схема готова' : 'Architecture ready',
+    detail: locale === 'ru' ? 'Штатная нагрузка 1×, сбоев нет' : 'Healthy 1× baseline, no faults',
     tone: 'healthy',
   },
 ]
@@ -131,17 +121,20 @@ const createReplayRepository = () => {
 }
 
 export function App() {
+  const [locale, setLocale] = useState<Locale>(initialLocale)
   const [challengeId, setChallengeId] = useState<ScenarioId>('url-shortener')
   const activePack = getChallengePack(challengeId)
   const [nodes, setNodes] = useState<SystemFlowNode[]>(() => clonePackNodes(getChallengePack('url-shortener')))
   const [edges, setEdges] = useState<SystemFlowEdge[]>(() => clonePackEdges(getChallengePack('url-shortener')))
   const [activeKind, setActiveKind] = useState<ComponentKind>('cache')
-  const [load, setLoad] = useState<1 | 3 | 10>(10)
-  const [fault, setFault] = useState<FaultMode>('cache-outage')
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>('api')
+  const [load, setLoad] = useState<LoadMultiplier>(1)
+  const [fault, setFault] = useState<FaultMode>('none')
   const [playing, setPlaying] = useState(true)
+  const simulatedLoad = useTrafficRamp(load, playing)
   const [tick, setTick] = useState(0)
   const [elapsedSeconds, setElapsedSeconds] = useState(18 * 60 + 42)
-  const [interviewerOpen, setInterviewerOpen] = useState(true)
+  const [interviewerOpen, setInterviewerOpen] = useState(false)
   const [rightPanelMode, setRightPanelMode] = useState<'interview' | 'bottleneck'>('bottleneck')
   const [capacity, setCapacity] = useState<CapacityTuning>(DEFAULT_CAPACITY_TUNING)
   const [bottleneckPrediction, setBottleneckPrediction] = useState<BottleneckPrediction | null>(null)
@@ -156,12 +149,12 @@ export function App() {
     message: string
     tone: 'success' | 'error'
   } | null>(null)
-  const [events, setEvents] = useState<TimelineEvent[]>(initialEvents)
+  const [events, setEvents] = useState<TimelineEvent[]>(() => initialEvents(initialLocale()))
   const [answer, setAnswer] = useState('')
   const [feedback, setFeedback] = useState('')
-  const [prompt, setPrompt] = useState(
-    'Redis is unavailable. How would you protect the database from a cache stampede?',
-  )
+  const [prompt, setPrompt] = useState(() => initialLocale() === 'ru'
+    ? 'С чего начнёте проектирование сервиса коротких ссылок: с требований или с оценки нагрузки?'
+    : 'Would you start the URL shortener design with requirements or a traffic estimate?')
   const [interviewBusy, setInterviewBusy] = useState(false)
   const [judgeReport, setJudgeReport] = useState<JudgeReport | null>(null)
   const [replayRepository] = useState(createReplayRepository)
@@ -177,6 +170,7 @@ export function App() {
   const [replayCursorMs, setReplayCursorMs] = useState(0)
   const [replayPlaying, setReplayPlaying] = useState(false)
   const [replaySpeed, setReplaySpeed] = useState(1)
+  const effectiveLoad = replayAttempt ? load : simulatedLoad
   const draftAttemptRef = useRef<ReplayAttemptV1 | null>(null)
   const recordingElapsedMsRef = useRef(0)
   const canonicalStateRef = useRef({ nodes, edges, load, fault, capacity, challengeId })
@@ -191,18 +185,32 @@ export function App() {
   } | null>(null)
 
   canonicalStateRef.current = { nodes, edges, load, fault, capacity, challengeId }
+  const selectedNode = nodes.find((node) => node.id === selectedNodeId) ?? null
+  const localizedChallengeOptions = useMemo(
+    () => challengeOptions.map((option) => ({
+      ...option,
+      title: scenarioLabels[locale][option.id].title,
+      difficulty: scenarioLabels[locale][option.id].difficulty,
+    })),
+    [locale],
+  )
+
+  useEffect(() => {
+    document.documentElement.lang = locale
+    try { window.localStorage.setItem('faultline.locale', locale) } catch { /* optional */ }
+  }, [locale])
 
   // Simulation topology must not be invalidated by the live health/detail fields
   // that we write back into React Flow nodes on every tick.
   const componentTopology = nodes
-    .map((node) => `${node.id}:${node.data.kind}`)
+    .map((node) => `${node.id}:${node.data.kind}:${node.data.replicas ?? 1}:${node.data.shards ?? 1}`)
     .sort()
     .join('|')
   const graphTopology = `${componentTopology}::${edges
     .map((edge) => `${edge.id}:${edge.source}>${edge.target}`)
     .sort()
     .join('|')}`
-  const { componentCounts, criticalPathConnected, routedNodeIds } = useMemo(
+  const { componentCounts, replicaCounts, criticalPathConnected, routedNodeIds } = useMemo(
     () => analyzeTopology(nodes, edges),
     [graphTopology],
   )
@@ -211,31 +219,33 @@ export function App() {
     () =>
       computeSimulation({
         scenario: challengeId,
-        loadMultiplier: load,
+        loadMultiplier: effectiveLoad,
         fault,
         tick,
         nodeCount: nodes.length,
         edgeCount: edges.length,
         componentCounts,
+        replicaCounts,
         criticalPathConnected,
         capacity,
       }),
-    [capacity, challengeId, componentCounts, criticalPathConnected, edges.length, fault, load, nodes.length, tick],
+    [capacity, challengeId, componentCounts, criticalPathConnected, edges.length, effectiveLoad, fault, nodes.length, replicaCounts, tick],
   )
 
   const capacityReport = useMemo(
     () => estimateCapacity({
-      loadMultiplier: load,
+      loadMultiplier: effectiveLoad,
       fault,
       tuning: capacity,
       componentCounts,
+      replicaCounts,
       criticalPathConnected,
     }),
-    [capacity, componentCounts, criticalPathConnected, fault, load],
+    [capacity, componentCounts, criticalPathConnected, effectiveLoad, fault, replicaCounts],
   )
   const baselineCapacityReport = useMemo(
     () => estimateCapacity({
-      loadMultiplier: load,
+      loadMultiplier: effectiveLoad,
       fault,
       tuning: {
         ...DEFAULT_CAPACITY_TUNING,
@@ -243,6 +253,7 @@ export function App() {
         benchmarkPackId: capacity.benchmarkPackId,
       },
       componentCounts,
+      replicaCounts,
       criticalPathConnected,
     }),
     [
@@ -251,29 +262,30 @@ export function App() {
       componentCounts,
       criticalPathConnected,
       fault,
-      load,
+      effectiveLoad,
+      replicaCounts,
     ],
   )
 
   const newsFeedReport = useMemo(
     () => estimateNewsFeed({
-      loadMultiplier: load,
+      loadMultiplier: effectiveLoad,
       fault,
       tuning: capacity,
       componentCounts,
       criticalPathConnected,
     }),
-    [capacity, componentCounts, criticalPathConnected, fault, load],
+    [capacity, componentCounts, criticalPathConnected, effectiveLoad, fault],
   )
   const baselineNewsFeedReport = useMemo(
     () => estimateNewsFeed({
-      loadMultiplier: load,
+      loadMultiplier: effectiveLoad,
       fault,
       tuning: DEFAULT_NEWS_FEED_TUNING,
       componentCounts,
       criticalPathConnected,
     }),
-    [componentCounts, criticalPathConnected, fault, load],
+    [componentCounts, criticalPathConnected, effectiveLoad, fault],
   )
 
   const replayFrame = useMemo(
@@ -307,8 +319,8 @@ export function App() {
       tick: index - 21,
       ...computeSimulation({
         scenario: 'url-shortener',
-        loadMultiplier: 10,
-        fault: 'cache-outage',
+        loadMultiplier: 1,
+        fault: 'none',
         tick: index - 21,
         capacity: DEFAULT_CAPACITY_TUNING,
       }).metrics,
@@ -453,27 +465,33 @@ export function App() {
         } else if (
           fault === 'cache-outage' &&
           node.data.kind === 'cache' &&
-          routedCaches.length > 1
+          (replicaCounts.cache ?? routedCaches.length) > 1
         ) {
-          health = node.id === faultedCacheId ? 'failed' : 'degraded'
-          detail = node.id === faultedCacheId ? 'Unavailable' : detail
+          const separateFailedNode = routedCaches.length > 1 && node.id === faultedCacheId
+          health = separateFailedNode ? 'failed' : 'degraded'
+          detail = separateFailedNode ? 'Unavailable' : detail
         }
 
         return {
           ...node,
           data: {
             ...node.data,
+            label: localizeNodeLabel(locale, challengeId, node.id, node.data.label),
             health,
-            detail,
-            load,
+            detail: localizeNodeDetail(locale, detail),
+            load: effectiveLoad,
           },
         }
       })
     })
   }, [
     criticalPathConnected,
+    challengeId,
+    componentCounts.cache,
     fault,
-    load,
+    locale,
+    effectiveLoad,
+    replicaCounts.cache,
     routedNodeIds,
     snapshot.nodeDetails,
     snapshot.nodeHealth,
@@ -488,7 +506,7 @@ export function App() {
         if (challengeId === 'news-feed' && edge.id === 'feed-users-api') {
           label = `${formatMetric(snapshot.metrics.throughput, 'throughput')} deliveries/s`
         } else if (challengeId === 'news-feed' && edge.id === 'feed-api-store') {
-          label = `${load * 2}k posts/s`
+          label = `${Math.round(effectiveLoad * 2)}k posts/s`
         } else if (challengeId === 'news-feed' && edge.id === 'feed-api-queue') {
           label = fault === 'celebrity-spike'
             ? '50M fan-out'
@@ -510,13 +528,13 @@ export function App() {
           label,
           data: {
             tone: toneForHealth(targetHealth),
-            intensity: challengeId === 'news-feed' && fault === 'celebrity-spike' ? 10 : load,
+            intensity: challengeId === 'news-feed' && fault === 'celebrity-spike' ? 10 : effectiveLoad,
             paused: replayAttempt ? !replayPlaying : !playing,
           },
         }
       }),
     )
-  }, [capacity, challengeId, fault, load, nodes, playing, replayAttempt, replayPlaying, snapshot.metrics])
+  }, [capacity, challengeId, effectiveLoad, fault, nodes, playing, replayAttempt, replayPlaying, snapshot.metrics])
 
   const onNodesChange = useCallback(
     (changes: NodeChange<SystemFlowNode>[]) => {
@@ -641,25 +659,73 @@ export function App() {
     [addEvent, load, recordAction, snapshot.nodeDetails, snapshot.nodeHealth],
   )
 
+  const changeNodeTopology = useCallback((
+    nodeId: string,
+    topology: { replicas: number; shards: number },
+  ) => {
+    const node = canonicalStateRef.current.nodes.find((item) => item.id === nodeId)
+    if (!node) return
+    const replicas = Math.min(4, Math.max(1, Math.floor(topology.replicas)))
+    const shards = Math.min(8, Math.max(1, Math.floor(topology.shards)))
+    setNodes((current) => current.map((item) => item.id === nodeId
+      ? { ...item, data: { ...item.data, replicas, shards } }
+      : item))
+
+    if (node.data.kind === 'database') {
+      const readReplicas = Math.min(2, Math.max(0, replicas - 1)) as CapacityTuning['readReplicas']
+      const nextCapacity = { ...canonicalStateRef.current.capacity, readReplicas }
+      setCapacity(nextCapacity)
+      recordAction({
+        type: 'capacity.changed',
+        source: 'user',
+        payload: { capacity: nextCapacity },
+        timeline: {
+          title: locale === 'ru' ? 'Репликация БД обновлена' : 'Database replication updated',
+          detail: `${readReplicas} read replica${readReplicas === 1 ? '' : 's'}`,
+          tone: 'neutral',
+        },
+      })
+    }
+
+    addEvent(
+      locale === 'ru' ? 'Топология обновлена' : 'Topology updated',
+      locale === 'ru'
+        ? `${node.data.label}: ${replicas} репл., ${shards} шард.`
+        : `${node.data.label}: ${replicas} replicas, ${shards} shards`,
+      'neutral',
+    )
+    recordAction({
+      type: 'node.updated',
+      source: 'user',
+      payload: { nodeId, patch: { data: { replicas, shards } } },
+      timeline: {
+        title: locale === 'ru' ? 'Топология обновлена' : 'Topology updated',
+        detail: `${node.data.label}: ${replicas}× / ${shards} shards`,
+        tone: 'neutral',
+      },
+    })
+  }, [addEvent, locale, recordAction])
+
   const changeLoad = useCallback(
     (nextLoad: 1 | 3 | 10) => {
       setLoad(nextLoad)
       const offered = challengeId === 'news-feed'
-        ? `${nextLoad * 30}k timeline reads/s offered`
-        : `${nextLoad * 10}k req/s offered`
-      addEvent(`Load changed to ${nextLoad}×`, offered, nextLoad === 10 ? 'warning' : 'healthy')
+        ? locale === 'ru' ? `Подано ${nextLoad * 30}k чтений ленты/с` : `${nextLoad * 30}k timeline reads/s offered`
+        : locale === 'ru' ? `Подано ${nextLoad * 10}k запросов/с` : `${nextLoad * 10}k req/s offered`
+      const title = locale === 'ru' ? `Целевая нагрузка: ${nextLoad}×` : `Load changed to ${nextLoad}×`
+      addEvent(title, offered, nextLoad === 10 ? 'warning' : 'healthy')
       recordAction({
         type: 'load.changed',
         source: 'user',
         payload: { load: nextLoad },
         timeline: {
-          title: `Load changed to ${nextLoad}×`,
+          title,
           detail: offered,
           tone: nextLoad === 10 ? 'warning' : 'healthy',
         },
       })
     },
-    [addEvent, challengeId, recordAction],
+    [addEvent, challengeId, locale, recordAction],
   )
 
   const changeFault = useCallback(
@@ -672,8 +738,12 @@ export function App() {
             ? 'critical'
             : 'warning'
       addEvent(
-        nextFault === 'none' ? 'Fault cleared' : FAULT_LABELS[nextFault],
-        nextFault === 'none' ? 'System is recovering' : 'Fault injected into the simulation',
+        nextFault === 'none'
+          ? locale === 'ru' ? 'Сбой снят' : 'Fault cleared'
+          : localizedFaultLabels[locale][nextFault],
+        nextFault === 'none'
+          ? locale === 'ru' ? 'Система восстанавливается' : 'System is recovering'
+          : locale === 'ru' ? 'Сбой добавлен в симуляцию' : 'Fault injected into the simulation',
         tone,
       )
       recordAction({
@@ -682,20 +752,25 @@ export function App() {
         payload: { fault: nextFault },
         timeline: {
           title: nextFault === 'none'
-            ? 'Fault cleared'
+            ? locale === 'ru' ? 'Сбой снят' : 'Fault cleared'
             : nextFault === 'cache-outage'
-              ? 'Redis became unavailable'
-              : FAULT_LABELS[nextFault],
-          detail: nextFault === 'none' ? 'System is recovering' : 'Fault injected into the simulation',
+              ? locale === 'ru' ? 'Redis стал недоступен' : 'Redis became unavailable'
+              : localizedFaultLabels[locale][nextFault],
+          detail: nextFault === 'none'
+            ? locale === 'ru' ? 'Система восстанавливается' : 'System is recovering'
+            : locale === 'ru' ? 'Сбой добавлен в симуляцию' : 'Fault injected into the simulation',
           tone,
         },
       })
     },
-    [addEvent, recordAction],
+    [addEvent, locale, recordAction],
   )
 
   const changeCapacity = useCallback((nextCapacity: CapacityTuning) => {
     setCapacity(nextCapacity)
+    setNodes((current) => current.map((node) => node.data.kind === 'database'
+      ? { ...node, data: { ...node.data, replicas: nextCapacity.readReplicas + 1 } }
+      : node))
     const changedKey = (Object.keys(nextCapacity) as Array<keyof CapacityTuning>)
       .find((key) => nextCapacity[key] !== capacity[key])
     const detail = changedKey
@@ -720,6 +795,7 @@ export function App() {
     setNodes(clonePackNodes(pack))
     setEdges(clonePackEdges(pack))
     setActiveKind(pack.panel === 'fanout' ? 'queue' : 'cache')
+    setSelectedNodeId(pack.seedNodes.find((node) => node.data.kind === 'service')?.id ?? null)
     setLoad(pack.defaults.load)
     setFault(pack.defaults.fault)
     setCapacity({ ...pack.defaults.tuning })
@@ -727,7 +803,7 @@ export function App() {
     setElapsedSeconds(0)
     setPlaying(true)
     setRightPanelMode('bottleneck')
-    setInterviewerOpen(true)
+    setInterviewerOpen(false)
     setChallengeOpen(true)
     setHistoryOpen(false)
     setJudgeReport(null)
@@ -832,6 +908,7 @@ export function App() {
     const report = judge(
       {
         componentCounts,
+        replicaCounts,
         criticalPathConnected,
         nodeCount: nodes.length,
         edgeCount: edges.length,
@@ -912,6 +989,7 @@ export function App() {
     fault,
     load,
     nodes.length,
+    replicaCounts,
     recordAction,
     replayRepository,
   ])
@@ -1154,23 +1232,33 @@ export function App() {
     <div
       className={`app-shell ${interviewerOpen ? 'interviewer-open' : 'interviewer-closed'} ${
         (replayAttempt ? replayPlaying : playing) ? 'simulation-running' : 'simulation-paused'
-      } ${replayAttempt ? 'replay-mode' : ''} ${rightPanelMode === 'bottleneck' ? 'bottleneck-mode' : ''}`}
+      } ${replayAttempt ? 'replay-mode' : ''} ${rightPanelMode === 'bottleneck' ? 'bottleneck-mode' : ''} ${
+        selectedNode ? 'node-inspector-open' : ''
+      }`}
     >
       <TopBar
         challengeId={challengeId}
-        challengeTitle={activePack.definition.title.replace(/^Design a /, '')}
-        challengeOptions={challengeOptions}
+        locale={locale}
+        onLocaleChange={setLocale}
+        challengeTitle={scenarioLabels[locale][challengeId].title}
+        challengeOptions={localizedChallengeOptions}
         onChallengeChange={switchChallenge}
         elapsedSeconds={replayAttempt ? Math.floor(replayCursorMs / 1000) : elapsedSeconds}
         playing={replayAttempt ? replayPlaying : playing}
         onTogglePlaying={() => setPlaying((value) => !value)}
         interviewerOpen={interviewerOpen && !historyOpen && !replayAttempt}
-        onToggleInterviewer={() => setInterviewerOpen((value) => !value)}
+        onToggleInterviewer={() => {
+          setSelectedNodeId(null)
+          setInterviewerOpen((value) => !value)
+        }}
         onOpenCapacity={() => {
+          setSelectedNodeId(null)
           setRightPanelMode('bottleneck')
           setInterviewerOpen(true)
         }}
-        defenseLabel={activePack.panel === 'fanout' ? 'Celebrity Defense' : 'Bottleneck Defense'}
+        defenseLabel={locale === 'ru'
+          ? activePack.panel === 'fanout' ? 'Защита от скачка' : 'Защита узкого места'
+          : activePack.panel === 'fanout' ? 'Celebrity Defense' : 'Bottleneck Defense'}
         capacityActive={rightPanelMode === 'bottleneck' && interviewerOpen}
         onOpenChallenge={() => {
           if (!replayAttempt) setChallengeOpen(true)
@@ -1188,23 +1276,32 @@ export function App() {
           edges={edges}
           activeKind={activeKind}
           load={load}
+          effectiveLoad={effectiveLoad}
           fault={fault}
+          locale={locale}
+          scenario={challengeId}
+          selectedNode={selectedNode}
           telemetry={telemetry}
           faults={activePack.faults}
-          telemetryLabels={activePack.telemetryLabels}
-          canvasLabel={activePack.canvasLabel}
+          telemetryLabels={locale === 'ru'
+            ? challengeId === 'news-feed'
+              ? { throughput: 'Доставки', p99: 'Свежесть', errorRate: 'Устаревшие', dbCpu: 'Воркеры' }
+              : { throughput: 'Пропускная способность', p99: 'p99', errorRate: 'Ошибки', dbCpu: 'CPU БД' }
+            : activePack.telemetryLabels}
+          canvasLabel={locale === 'ru'
+            ? challengeId === 'news-feed' ? 'Архитектура ленты новостей' : 'Архитектура коротких ссылок'
+            : activePack.canvasLabel}
           onNodesChange={onNodesChange}
           onNodeDragStop={onNodeDragStop}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
           onAddNode={addNode}
-          onNodeKindSelected={(kind) => {
-            setActiveKind(kind)
-            if (kind === 'database' || kind === 'cache') {
-              setRightPanelMode('bottleneck')
-              setInterviewerOpen(true)
-            }
+          onNodeSelected={(node) => {
+            setActiveKind(node.data.kind)
+            setSelectedNodeId(node.id)
           }}
+          onInspectorClose={() => setSelectedNodeId(null)}
+          onTopologyChange={changeNodeTopology}
           onLoadChange={changeLoad}
           onFaultChange={changeFault}
           readOnly={Boolean(replayAttempt)}
@@ -1239,7 +1336,8 @@ export function App() {
         />
         {!historyOpen && !replayAttempt && rightPanelMode === 'interview' && <InterviewerPanel
           open={interviewerOpen}
-          providerLabel="Local preview"
+          locale={locale}
+          providerLabel={locale === 'ru' ? 'Локальный режим' : 'Local preview'}
           prompt={prompt}
           feedback={feedback}
           answer={answer}
@@ -1256,6 +1354,7 @@ export function App() {
         {!historyOpen && !replayAttempt && rightPanelMode === 'bottleneck' && activePack.panel === 'capacity' && (
           <BottleneckPanel
             open={interviewerOpen}
+            locale={locale}
             tuning={capacity}
             report={capacityReport}
             baseline={baselineCapacityReport}
@@ -1272,13 +1371,17 @@ export function App() {
               pricingPackId: capacity.pricingPackId,
               benchmarkPackId: capacity.benchmarkPackId,
             })}
-            onOpenInterviewer={() => setRightPanelMode('interview')}
+            onOpenInterviewer={() => {
+              setSelectedNodeId(null)
+              setRightPanelMode('interview')
+            }}
             onClose={() => setInterviewerOpen((value) => !value)}
           />
         )}
         {!historyOpen && !replayAttempt && rightPanelMode === 'bottleneck' && activePack.panel === 'fanout' && (
           <FanoutPanel
             open={interviewerOpen}
+            locale={locale}
             tuning={capacity}
             report={newsFeedReport}
             baseline={baselineNewsFeedReport}
@@ -1291,7 +1394,10 @@ export function App() {
             onTuningChange={changeCapacity}
             onDefend={defendCapacity}
             onReset={() => changeCapacity({ ...DEFAULT_NEWS_FEED_TUNING })}
-            onOpenInterviewer={() => setRightPanelMode('interview')}
+            onOpenInterviewer={() => {
+              setSelectedNodeId(null)
+              setRightPanelMode('interview')
+            }}
             onClose={() => setInterviewerOpen((value) => !value)}
           />
         )}
@@ -1328,6 +1434,7 @@ export function App() {
       </div>
       <ChallengePanel
         challenge={activePack.definition}
+        locale={locale}
         open={challengeOpen && !replayAttempt}
         onClose={() => setChallengeOpen(false)}
         onRunCase={(nextLoad, nextFault) => {

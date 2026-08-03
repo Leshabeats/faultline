@@ -54,4 +54,24 @@ describe('topology analysis', () => {
     expect(result.criticalPathConnected).toBe(false)
     expect(result.componentCounts.database).toBeUndefined()
   })
+
+  it('turns compact replica and shard controls into routed capacity', () => {
+    const scaled = seedNodes.map((node) => {
+      if (node.data.kind === 'cache') {
+        return { ...node, data: { ...node.data, replicas: 3, shards: 2 } }
+      }
+      if (node.data.kind === 'database') {
+        return { ...node, data: { ...node.data, replicas: 3, shards: 4 } }
+      }
+      return node
+    })
+
+    const result = analyzeTopology(scaled, seedEdges)
+
+    expect(result.componentCounts.cache).toBe(6)
+    expect(result.replicaCounts.cache).toBe(3)
+    // Database read replicas are tracked by CapacityTuning; topology counts shards.
+    expect(result.componentCounts.database).toBe(4)
+    expect(result.replicaCounts.database).toBe(3)
+  })
 })

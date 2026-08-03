@@ -155,5 +155,11 @@ describe('judgeUrlShortener', () => {
         componentCounts: { ...starterTopology.componentCounts, cache: -1 },
       }),
     ).toThrow(/component count/)
+    expect(() =>
+      judgeUrlShortener({
+        ...starterTopology,
+        replicaCounts: { cache: Number.NaN },
+      }),
+    ).toThrow(/replica count/)
   })
 })

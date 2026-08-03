@@ -18,6 +18,7 @@ function walkGraph(starts: string[], adjacency: Map<string, string[]>) {
 
 export interface TopologyAnalysis {
   componentCounts: Partial<Record<ComponentKind, number>>
+  replicaCounts: Partial<Record<ComponentKind, number>>
   criticalPathConnected: boolean
   routedNodeIds: string[]
 }
@@ -44,10 +45,22 @@ export function analyzeTopology(
     .filter((nodeId) => canReachDatabase.has(nodeId))
     .sort()
   const routedNodeIdSet = new Set(routedNodeIds)
+  const replicaCounts: Partial<Record<ComponentKind, number>> = {}
   const componentCounts = nodes.reduce<Partial<Record<ComponentKind, number>>>(
     (counts, node) => {
       if (routedNodeIdSet.has(node.id)) {
-        counts[node.data.kind] = (counts[node.data.kind] ?? 0) + 1
+        const replicas = Math.max(1, Math.floor(node.data.replicas ?? 1))
+        const shards = Math.max(1, Math.floor(node.data.shards ?? 1))
+        replicaCounts[node.data.kind] = (replicaCounts[node.data.kind] ?? 0) + replicas
+        // Database replicas are modelled separately as read replicas in the
+        // capacity tuning. Database nodes contribute their shard count here;
+        // stateless/cache nodes contribute every serving instance.
+        const instances = node.data.kind === 'database'
+          ? shards
+          : node.data.kind === 'cache'
+            ? replicas * shards
+            : replicas
+        counts[node.data.kind] = (counts[node.data.kind] ?? 0) + instances
       }
       return counts
     },
@@ -56,6 +69,7 @@ export function analyzeTopology(
 
   return {
     componentCounts,
+    replicaCounts,
     criticalPathConnected: databases.some((databaseId) =>
       reachableFromClients.has(databaseId),
     ),

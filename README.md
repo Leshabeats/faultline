@@ -30,6 +30,9 @@ The launch topology scores `76/100`. Connecting a complete second cache path mak
 ## What works today
 
 - Interactive system canvas with draggable, connectable components built on React Flow.
+- Click-through component inspector with the Short Link API endpoints, Redis cache keys, database schema, responsibilities, and design decisions.
+- Topology controls on the diagram: replicas and shards are visible on each node and change capacity, availability, database cost, and replay state.
+- Russian and English product UI with browser-aware defaults and a persistent language switcher.
 - A URL Shortener challenge statement with requirements, scale, three public cases, and two redacted hidden cases.
 - The Celebrity Problem: a News Feed challenge with normal traffic, a 50M-follower spike, worker outage, hot-key, and duplicate-delivery cases.
 - A reusable challenge-pack registry that switches the seed graph, fault controls, telemetry language, tuning surface, judge, and replay presentation together.
@@ -41,7 +44,7 @@ The launch topology scores `76/100`. Connecting a complete second cache path mak
 - A versioned estimated cost model with monthly cost, cost per million redirects, workload math, storage footprint, and disclosed assumptions.
 - Separate calibration controls for verified AWS `us-east-1` unit rates and capacity evidence, so a provider price is never presented as measured throughput.
 - A reproducible local benchmark pack with real `pgbench` and `redis-benchmark` results, plus strict validation for the public pack format.
-- Deterministic load controls (`1x`, `3x`, `10x`) and challenge-specific fault injection menus.
+- Deterministic target-load controls (`1x`, `3x`, `10x`) with a 2.8-second animated user ramp and challenge-specific fault injection menus.
 - A local interviewer with follow-up questions, hints, design review, and answer feedback informed by the current diagram and simulation metrics.
 - Semantic attempt recording for load, fault, topology, capacity tuning, interviewer-answer, and submission actions without storing derived animation noise.
 - Local attempt history with deterministic play/pause, scrub, previous/next event controls, `0.5x`/`1x`/`2x` speed, and synchronized metrics.

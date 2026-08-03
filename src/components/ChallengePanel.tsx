@@ -2,6 +2,8 @@ import { useEffect, useRef, type KeyboardEvent } from 'react'
 import { CheckCircle2, CircleCheck, CircleX, Lock, Play, RotateCcw, Trophy, X } from 'lucide-react'
 import type { ChallengeDefinition } from '../challenges/types'
 import type { JudgeReport } from '../judge'
+import type { Locale } from '../domain/system'
+import { localizeChallengeDefinition } from '../i18n'
 
 const FOCUSABLE_SELECTOR = [
   'a[href]',
@@ -14,6 +16,7 @@ const FOCUSABLE_SELECTOR = [
 
 interface ChallengePanelProps {
   challenge: ChallengeDefinition
+  locale: Locale
   open: boolean
   onClose: () => void
   onRunCase: (load: 1 | 3 | 10, fault: ChallengeDefinition['cases'][number]['fault']) => void
@@ -23,12 +26,15 @@ interface ChallengePanelProps {
 
 export function ChallengePanel({
   challenge,
+  locale,
   open,
   onClose,
   onRunCase,
   report,
   onSubmitDesign,
 }: ChallengePanelProps) {
+  const ru = locale === 'ru'
+  const content = localizeChallengeDefinition(challenge, locale)
   const panelRef = useRef<HTMLElement>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
   const openerRef = useRef<HTMLElement | null>(null)
@@ -122,27 +128,27 @@ export function ChallengePanel({
       >
         <header>
           <div>
-            <span>{challenge.difficulty} challenge</span>
-            <h1 id="challenge-title">{challenge.title}</h1>
+            <span>{ru ? `${content.difficulty === 'Hard' ? 'Сложная' : 'Средняя'} задача` : `${content.difficulty} challenge`}</span>
+            <h1 id="challenge-title">{content.title}</h1>
           </div>
-          <button ref={closeButtonRef} type="button" onClick={onClose} aria-label="Close challenge">
+          <button ref={closeButtonRef} type="button" onClick={onClose} aria-label={ru ? 'Закрыть задачу' : 'Close challenge'}>
             <X size={20} />
           </button>
         </header>
-        <p className="challenge-summary">{challenge.summary}</p>
+        <p className="challenge-summary">{content.summary}</p>
         <div className="challenge-columns">
           <section>
-            <h2>Requirements</h2>
+            <h2>{ru ? 'Требования' : 'Requirements'}</h2>
             <ul>
-              {challenge.requirements.map((requirement) => (
+              {content.requirements.map((requirement) => (
                 <li key={requirement}><CheckCircle2 size={16} /> {requirement}</li>
               ))}
             </ul>
           </section>
           <section>
-            <h2>Scale</h2>
+            <h2>{ru ? 'Масштаб' : 'Scale'}</h2>
             <ul>
-              {challenge.scale.map((item) => (
+              {content.scale.map((item) => (
                 <li key={item}><span className="scale-dot" /> {item}</li>
               ))}
             </ul>
@@ -150,11 +156,11 @@ export function ChallengePanel({
         </div>
         <section className="challenge-cases">
           <div className="challenge-section-heading">
-            <h2>Test cases</h2>
-            <span>{challenge.cases.filter((item) => !item.hidden).length} public · {challenge.cases.filter((item) => item.hidden).length} hidden</span>
+            <h2>{ru ? 'Тестовые кейсы' : 'Test cases'}</h2>
+            <span>{content.cases.filter((item) => !item.hidden).length} {ru ? 'открытых' : 'public'} · {content.cases.filter((item) => item.hidden).length} {ru ? 'скрытых' : 'hidden'}</span>
           </div>
           <ol>
-            {challenge.cases.map((testCase, index) => {
+            {content.cases.map((testCase, index) => {
               const result = report?.cases[index]
               return (
                 <li key={testCase.id} className={testCase.hidden ? 'is-hidden' : ''}>
@@ -167,7 +173,7 @@ export function ChallengePanel({
                     {result && (
                       <span className={`case-verdict ${result.passed ? 'is-passed' : 'is-failed'}`}>
                         {result.passed ? <CircleCheck size={15} /> : <CircleX size={15} />}
-                        {result.passed ? 'Passed' : 'Failed'}
+                        {result.passed ? ru ? 'Пройден' : 'Passed' : ru ? 'Не пройден' : 'Failed'}
                       </span>
                     )}
                     {!testCase.hidden && (
@@ -178,7 +184,7 @@ export function ChallengePanel({
                           onClose()
                         }}
                       >
-                        <Play size={15} fill="currentColor" /> Run
+                        <Play size={15} fill="currentColor" /> {ru ? 'Запустить' : 'Run'}
                       </button>
                     )}
                   </span>
@@ -190,9 +196,9 @@ export function ChallengePanel({
         {report && (
           <section className="judge-report" aria-live="polite" aria-label="Submission result">
             <div className="judge-score">
-              <span><Trophy size={17} /> Submission</span>
+              <span><Trophy size={17} /> {ru ? 'Результат' : 'Submission'}</span>
               <strong>{report.score}<small>/100</small></strong>
-              <p>{report.passedCases} of {report.totalCases} cases passed</p>
+              <p>{ru ? `${report.passedCases} из ${report.totalCases} кейсов пройдено` : `${report.passedCases} of ${report.totalCases} cases passed`}</p>
             </div>
             <div className="judge-breakdown">
               {report.scoreBreakdown.map((item) => (
@@ -206,13 +212,13 @@ export function ChallengePanel({
         )}
         <footer>
           <div>
-            <span>Score dimensions</span>
-            <p>{challenge.rubric.join(' · ')}</p>
+            <span>{ru ? 'Критерии оценки' : 'Score dimensions'}</span>
+            <p>{content.rubric.join(' · ')}</p>
           </div>
           <div className="challenge-footer-actions">
-            <button type="button" className="secondary" onClick={onClose}>Back to board</button>
+            <button type="button" className="secondary" onClick={onClose}>{ru ? 'Назад к схеме' : 'Back to board'}</button>
             <button type="button" onClick={onSubmitDesign}>
-              {report ? 'Run again' : 'Submit design'}
+              {report ? ru ? 'Запустить снова' : 'Run again' : ru ? 'Отправить решение' : 'Submit design'}
               {report ? <RotateCcw size={16} /> : <Play size={16} fill="currentColor" />}
             </button>
           </div>

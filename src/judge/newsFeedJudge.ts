@@ -129,6 +129,7 @@ function evaluateCases(
       nodeCount: topology.nodeCount,
       edgeCount: topology.edgeCount,
       componentCounts: { ...topology.componentCounts },
+      replicaCounts: topology.replicaCounts ? { ...topology.replicaCounts } : undefined,
       criticalPathConnected: topology.criticalPathConnected,
     })
     const context = { topology, snapshot }

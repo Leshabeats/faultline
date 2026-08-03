@@ -9,10 +9,11 @@ import {
   Gauge,
   Send,
 } from 'lucide-react'
-import type { TimelineEvent } from '../domain/system'
+import type { Locale, TimelineEvent } from '../domain/system'
 
 interface InterviewerPanelProps {
   open: boolean
+  locale: Locale
   providerLabel: string
   prompt: string
   feedback: string
@@ -30,6 +31,7 @@ interface InterviewerPanelProps {
 
 export function InterviewerPanel({
   open,
+  locale,
   providerLabel,
   prompt,
   feedback,
@@ -44,6 +46,7 @@ export function InterviewerPanel({
   onOpenCapacity,
   onClose,
 }: InterviewerPanelProps) {
+  const ru = locale === 'ru'
   const submit = (event: FormEvent) => {
     event.preventDefault()
     onSubmit()
@@ -54,14 +57,14 @@ export function InterviewerPanel({
       <div className="sheet-handle" aria-hidden="true" />
       <header className="interviewer-header">
         <div>
-          <strong>Interviewer</strong>
+          <strong>{ru ? 'Интервьюер' : 'Interviewer'}</strong>
           <span>{providerLabel}</span>
         </div>
         <div className="panel-header-actions">
-          <button type="button" onClick={onOpenCapacity} aria-label="Open bottleneck defense" title="Bottleneck Defense">
+          <button type="button" onClick={onOpenCapacity} aria-label={ru ? 'Открыть защиту узкого места' : 'Open bottleneck defense'} title={ru ? 'Защита узкого места' : 'Bottleneck Defense'}>
             <Gauge size={19} />
           </button>
-          <button type="button" onClick={onClose} aria-label="Close interviewer">
+          <button type="button" onClick={onClose} aria-label={ru ? 'Закрыть интервьюера' : 'Close interviewer'}>
             <ChevronLeft size={21} />
           </button>
         </div>
@@ -77,15 +80,15 @@ export function InterviewerPanel({
           <textarea
             value={answer}
             onChange={(event) => onAnswerChange(event.target.value)}
-            placeholder="Type your response…"
-            aria-label="Your interview response"
+            placeholder={ru ? 'Введите ответ…' : 'Type your response…'}
+            aria-label={ru ? 'Ваш ответ' : 'Your interview response'}
           />
           <div className="interviewer-actions">
             <button type="button" className="secondary-action" onClick={onHint} disabled={busy}>
-              <Lightbulb size={18} /> Hint
+              <Lightbulb size={18} /> {ru ? 'Подсказка' : 'Hint'}
             </button>
             <button type="button" className="secondary-action" onClick={onReview} disabled={busy}>
-              <BookOpen size={18} /> Review
+              <BookOpen size={18} /> {ru ? 'Разбор' : 'Review'}
             </button>
             <button
               type={answer.trim() ? 'submit' : 'button'}
@@ -94,14 +97,14 @@ export function InterviewerPanel({
               disabled={busy}
             >
               {busy ? <LoaderCircle className="spin" size={19} /> : <Send size={19} />}
-              <span>{answer.trim() ? 'Send' : 'Continue'}</span>
+              <span>{answer.trim() ? ru ? 'Отправить' : 'Send' : ru ? 'Продолжить' : 'Continue'}</span>
             </button>
           </div>
         </form>
         <details className="event-history" open>
           <summary>
-            <span><List size={18} /> Event history</span>
-            <span>{events.length} events <ChevronDown size={16} /></span>
+            <span><List size={18} /> {ru ? 'История событий' : 'Event history'}</span>
+            <span>{events.length} {ru ? 'событий' : 'events'} <ChevronDown size={16} /></span>
           </summary>
           <ol>
             {events.slice(0, 5).map((event) => (

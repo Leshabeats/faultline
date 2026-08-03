@@ -1,9 +1,10 @@
-import type { TelemetryPoint } from '../domain/system'
+import type { Locale, TelemetryPoint } from '../domain/system'
 import { formatMetric } from '../simulation/engine'
 
 interface TelemetryRibbonProps {
   history: TelemetryPoint[]
   labels?: Partial<Record<MetricKey, string>>
+  locale: Locale
 }
 
 type MetricKey = 'throughput' | 'p99' | 'errorRate' | 'dbCpu'
@@ -35,16 +36,18 @@ function Sparkline({ values, tone }: { values: number[]; tone: string }) {
   )
 }
 
-export function TelemetryRibbon({ history, labels = {} }: TelemetryRibbonProps) {
+export function TelemetryRibbon({ history, labels = {}, locale }: TelemetryRibbonProps) {
   const latest = history[history.length - 1]
   if (!latest) return null
 
   return (
-    <section className="telemetry-ribbon" aria-label="Live simulation metrics">
+    <section className="telemetry-ribbon" aria-label={locale === 'ru' ? 'Метрики симуляции' : 'Live simulation metrics'}>
       {metrics.map(({ key, label, tone }) => (
         <div className={`telemetry-metric tone-${tone}`} key={key}>
           <span className="metric-label">
-            <i aria-hidden="true" /> {labels[key] ?? label}
+            <i aria-hidden="true" /> {labels[key] ?? (locale === 'ru'
+              ? ({ throughput: 'Пропускная способность', p99: 'p99', errorRate: 'Ошибки', dbCpu: 'CPU БД' } as const)[key]
+              : label)}
           </span>
           <strong>{formatMetric(latest[key], key)}</strong>
           <Sparkline values={history.map((point) => point[key])} tone={tone} />

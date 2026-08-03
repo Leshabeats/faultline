@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import { Check, ChevronDown, Gauge, History, LogOut, PanelRightClose, Pause, Play, Share2 } from 'lucide-react'
-import type { ScenarioId } from '../domain/system'
+import { Check, ChevronDown, Gauge, History, Languages, LogOut, PanelRightClose, Pause, Play, Share2 } from 'lucide-react'
+import type { Locale, ScenarioId } from '../domain/system'
 import { FaultlineMark } from './FaultlineMark'
+import { UI_COPY } from '../i18n'
 
 interface TopBarProps {
   challengeId: ScenarioId
+  locale: Locale
+  onLocaleChange: (locale: Locale) => void
   challengeTitle: string
   challengeOptions: Array<{ id: ScenarioId; title: string; difficulty: string }>
   onChallengeChange: (id: ScenarioId) => void
@@ -33,6 +36,8 @@ const formatTime = (value: number) => {
 
 export function TopBar({
   challengeId,
+  locale,
+  onLocaleChange,
   challengeTitle,
   challengeOptions,
   onChallengeChange,
@@ -54,6 +59,7 @@ export function TopBar({
 }: TopBarProps) {
   const [challengeMenuOpen, setChallengeMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+  const text = UI_COPY[locale]
 
   useEffect(() => {
     if (!challengeMenuOpen) return
@@ -80,7 +86,7 @@ export function TopBar({
         </button>
         {challengeMenuOpen && !replayMode && (
           <div className="challenge-menu" role="menu" aria-label="Choose a challenge">
-            <span>Challenge pack</span>
+            <span>{text.challenges}</span>
             {challengeOptions.map((option) => (
               <button
                 key={option.id}
@@ -105,7 +111,7 @@ export function TopBar({
                 onOpenChallenge()
               }}
             >
-              View current brief
+              {text.currentBrief}
             </button>
           </div>
         )}
@@ -123,8 +129,8 @@ export function TopBar({
       <div className="topbar-actions">
         <button
           type="button"
-          aria-label="Open attempt history"
-          title="Attempt history"
+          aria-label={text.history}
+          title={text.history}
           className="icon-button history-button"
           onClick={onOpenHistory}
         >
@@ -132,8 +138,8 @@ export function TopBar({
         </button>
         <button
           type="button"
-          aria-label="Share scenario"
-          title="Copy scenario snapshot"
+          aria-label={text.share}
+          title={text.share}
           className="icon-button desktop-only"
           onClick={onShare}
         >
@@ -141,7 +147,7 @@ export function TopBar({
         </button>
         {!replayMode && <button
           type="button"
-          aria-label={`Open ${defenseLabel.toLowerCase()}`}
+          aria-label={locale === 'ru' ? `Открыть: ${defenseLabel.toLowerCase()}` : `Open ${defenseLabel.toLowerCase()}`}
           title={defenseLabel}
           className={`icon-button desktop-only ${capacityActive ? 'is-active' : ''}`}
           onClick={onOpenCapacity}
@@ -150,20 +156,33 @@ export function TopBar({
         </button>}
         {!replayMode && <button
           type="button"
-          aria-label={interviewerOpen ? 'Hide interviewer' : 'Show interviewer'}
+          aria-label={locale === 'ru'
+            ? interviewerOpen ? 'Скрыть интервьюера' : 'Показать интервьюера'
+            : interviewerOpen ? 'Hide interviewer' : 'Show interviewer'}
           className="icon-button desktop-only"
           onClick={onToggleInterviewer}
         >
           <PanelRightClose size={20} />
         </button>}
+        <button
+          type="button"
+          className="icon-button locale-button"
+          aria-label={locale === 'ru' ? 'Switch to English' : 'Переключить на русский'}
+          title={locale === 'ru' ? 'English' : 'Русский'}
+          onClick={() => onLocaleChange(locale === 'ru' ? 'en' : 'ru')}
+        >
+          <Languages size={18} /><span>{locale.toUpperCase()}</span>
+        </button>
         {replayMode ? (
-          <button className="pause-button replay-exit-button" type="button" aria-label="Exit replay" onClick={onExitReplay}>
+          <button className="pause-button replay-exit-button" type="button" aria-label={text.done} onClick={onExitReplay}>
             <LogOut size={17} />
-            <span>Done</span>
+            <span>{text.done}</span>
           </button>
-        ) : <button className="pause-button" type="button" aria-label={playing ? 'Pause simulation' : 'Run simulation'} onClick={onTogglePlaying}>
+        ) : <button className="pause-button" type="button" aria-label={playing
+          ? locale === 'ru' ? 'Поставить симуляцию на паузу' : 'Pause simulation'
+          : locale === 'ru' ? 'Запустить симуляцию' : 'Run simulation'} onClick={onTogglePlaying}>
           {playing ? <Pause size={17} fill="currentColor" /> : <Play size={17} fill="currentColor" />}
-          <span>{playing ? 'Pause' : 'Run'}</span>
+          <span>{playing ? text.pause : text.run}</span>
         </button>}
       </div>
     </header>

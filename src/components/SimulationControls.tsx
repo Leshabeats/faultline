@@ -1,18 +1,16 @@
 import { useState } from 'react'
 import { Check, Plus, TrendingUp, Zap } from 'lucide-react'
-import {
-  COMPONENT_LABELS,
-  FAULT_LABELS,
-  type ComponentKind,
-  type FaultMode,
-} from '../domain/system'
+import type { ComponentKind, FaultMode, LoadMultiplier, Locale } from '../domain/system'
+import { UI_COPY, componentLabels, faultLabels } from '../i18n'
 import { COMPONENT_KINDS } from './ComponentDock'
 import { StatefulIcon } from './icons/StatefulIcon'
 
 interface SimulationControlsProps {
-  load: 1 | 3 | 10
+  load: LoadMultiplier
+  effectiveLoad: number
   fault: FaultMode
-  onLoadChange: (load: 1 | 3 | 10) => void
+  locale: Locale
+  onLoadChange: (load: LoadMultiplier) => void
   onFaultChange: (fault: FaultMode) => void
   onQuickAdd: (kind: ComponentKind) => void
   faults: readonly FaultMode[]
@@ -20,7 +18,9 @@ interface SimulationControlsProps {
 
 export function SimulationControls({
   load,
+  effectiveLoad,
   fault,
+  locale,
   onLoadChange,
   onFaultChange,
   onQuickAdd,
@@ -28,6 +28,8 @@ export function SimulationControls({
 }: SimulationControlsProps) {
   const [faultMenuOpen, setFaultMenuOpen] = useState(false)
   const [componentMenuOpen, setComponentMenuOpen] = useState(false)
+  const text = UI_COPY[locale]
+  const ramping = Math.abs(load - effectiveLoad) > 0.04
 
   return (
     <div className="simulation-controls">
@@ -43,14 +45,14 @@ export function SimulationControls({
         aria-controls="mobile-component-palette"
       >
         <Plus size={22} />
-        <span>Add</span>
+        <span>{text.add}</span>
       </button>
       {componentMenuOpen && (
         <div
           id="mobile-component-palette"
           className="mobile-component-palette"
           role="menu"
-          aria-label="Add a system component"
+          aria-label={text.add}
         >
           {COMPONENT_KINDS.map((kind) => (
             <button
@@ -61,7 +63,7 @@ export function SimulationControls({
                 setComponentMenuOpen(false)
               }}
               role="menuitem"
-              aria-label={`Add ${COMPONENT_LABELS[kind]}`}
+              aria-label={`${text.add}: ${componentLabels[locale][kind]}`}
             >
               <StatefulIcon
                 kind={kind}
@@ -69,7 +71,7 @@ export function SimulationControls({
                 size={24}
                 decorative
               />
-              <span>{COMPONENT_LABELS[kind]}</span>
+              <span>{componentLabels[locale][kind]}</span>
             </button>
           ))}
         </div>
@@ -77,9 +79,9 @@ export function SimulationControls({
       <div className="load-control">
         <div className="control-title">
           <TrendingUp size={17} />
-          <span>Load</span>
+          <span>{text.load}</span>
         </div>
-        <div className="load-segments" aria-label="Traffic multiplier">
+        <div className="load-segments" aria-label={locale === 'ru' ? 'Множитель трафика' : 'Traffic multiplier'}>
           {([1, 3, 10] as const).map((value) => (
             <button
               key={value}
@@ -91,6 +93,9 @@ export function SimulationControls({
             </button>
           ))}
         </div>
+        <span className={`load-ramp-readout ${ramping ? 'is-ramping' : ''}`} aria-live="polite">
+          {ramping ? `${text.ramping}: ${effectiveLoad.toFixed(1)}× → ${load}×` : `${effectiveLoad.toFixed(1)}× ${text.live}`}
+        </span>
       </div>
       <div className="fault-control">
         <button
@@ -103,10 +108,10 @@ export function SimulationControls({
           aria-expanded={faultMenuOpen}
         >
           <Zap size={20} fill={fault !== 'none' ? 'currentColor' : 'none'} />
-          <span>Fault</span>
+          <span>{text.fault}</span>
         </button>
         {faultMenuOpen && (
-          <div className="fault-menu" role="menu">
+          <div className="fault-menu" role="menu" aria-label={text.fault}>
             {faults.map((option) => (
               <button
                 key={option}
@@ -118,7 +123,7 @@ export function SimulationControls({
                 }}
                 role="menuitem"
               >
-                {FAULT_LABELS[option]}
+                {faultLabels[locale][option]}
                 {fault === option && <Check size={16} />}
               </button>
             ))}

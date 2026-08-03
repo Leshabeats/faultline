@@ -38,7 +38,7 @@ export const normalizeNewsFeedTuning = (tuning?: CapacityTuning) => ({
 })
 
 interface EstimateNewsFeedInput {
-  loadMultiplier: 1 | 3 | 10
+  loadMultiplier: number
   fault: FaultMode
   tuning?: CapacityTuning
   componentCounts?: Partial<Record<ComponentKind, number>>

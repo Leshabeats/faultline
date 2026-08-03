@@ -27,6 +27,7 @@ export function verifyImportedAttempt(
   const report = judge(
     {
       componentCounts: topology.componentCounts,
+      replicaCounts: topology.replicaCounts,
       criticalPathConnected: topology.criticalPathConnected,
       nodeCount: presented.nodes.length,
       edgeCount: presented.edges.length,

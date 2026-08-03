@@ -15,6 +15,7 @@ import type {
   BottleneckKind,
   CapacityReport,
   CapacityTuning,
+  Locale,
 } from '../domain/system'
 import { CAPACITY_MODEL_LABEL } from '../capacity/model'
 import {
@@ -28,6 +29,7 @@ export type BottleneckPrediction = BottleneckKind
 
 interface BottleneckPanelProps {
   open: boolean
+  locale: Locale
   tuning: CapacityTuning
   report: CapacityReport
   baseline: CapacityReport
@@ -116,23 +118,26 @@ function ComparisonMetric({
   value,
   baseline,
   tone,
+  locale,
 }: {
   label: string
   value: string
   baseline: string
   tone?: 'good' | 'warning'
+  locale: Locale
 }) {
   return (
     <div className={`defense-metric ${tone ? `is-${tone}` : ''}`}>
       <span>{label}</span>
       <strong>{value}</strong>
-      <small>was {baseline}</small>
+      <small>{locale === 'ru' ? 'было' : 'was'} {baseline}</small>
     </div>
   )
 }
 
 export function BottleneckPanel({
   open,
+  locale,
   tuning,
   report,
   baseline,
@@ -148,6 +153,19 @@ export function BottleneckPanel({
   onOpenInterviewer,
   onClose,
 }: BottleneckPanelProps) {
+  const ru = locale === 'ru'
+  const labels: Record<BottleneckKind, string> = ru ? {
+    cache: 'Кеш',
+    service: 'API-сервис',
+    'connection-pool': 'Пул соединений',
+    database: 'Основная БД',
+  } : bottleneckLabels
+  const localizedPredictions = ru ? [
+    { value: 'cache' as const, detail: 'Miss rate и доступность кеша' },
+    { value: 'connection-pool' as const, detail: 'Параллельная работа с БД' },
+    { value: 'database' as const, detail: 'Запросы и ёмкость чтения' },
+    { value: 'service' as const, detail: 'Насыщение реплик приложения' },
+  ] : predictions
   const correctPrediction = prediction === baseline.bottleneck
   const nextLimitMoved = report.bottleneck !== baseline.bottleneck
   const costDelta = report.cost.total - baseline.cost.total
@@ -159,14 +177,14 @@ export function BottleneckPanel({
       <div className="sheet-handle" aria-hidden="true" />
       <header className="interviewer-header bottleneck-header">
         <div>
-          <strong>Bottleneck Defense</strong>
+          <strong>{ru ? 'Защита узкого места' : 'Bottleneck Defense'}</strong>
           <span>{CAPACITY_MODEL_LABEL}</span>
         </div>
         <div className="panel-header-actions">
-          <button type="button" onClick={onOpenInterviewer} aria-label="Open interviewer" title="Interviewer">
+          <button type="button" onClick={onOpenInterviewer} aria-label={ru ? 'Открыть интервьюера' : 'Open interviewer'} title={ru ? 'Интервьюер' : 'Interviewer'}>
             <MessageCircle size={19} />
           </button>
-          <button type="button" onClick={onClose} aria-label="Close bottleneck defense">
+          <button type="button" onClick={onClose} aria-label={ru ? 'Закрыть защиту' : 'Close bottleneck defense'}>
             <ChevronLeft size={21} />
           </button>
         </div>
@@ -174,9 +192,9 @@ export function BottleneckPanel({
 
       <div className="interviewer-body bottleneck-body">
         <div className="defense-step-rail" aria-label="Defense progress">
-          <span className="is-complete"><i>1</i> Predict</span>
-          <span className={predictionLocked ? 'is-active' : ''}><i>2</i> Tune</span>
-          <span><i>3</i> Defend</span>
+          <span className="is-complete"><i>1</i> {ru ? 'Прогноз' : 'Predict'}</span>
+          <span className={predictionLocked ? 'is-active' : ''}><i>2</i> {ru ? 'Настройка' : 'Tune'}</span>
+          <span><i>3</i> {ru ? 'Защита' : 'Defend'}</span>
         </div>
 
         {!predictionLocked ? (
@@ -184,12 +202,14 @@ export function BottleneckPanel({
             <div className="defense-heading">
               <Gauge size={22} />
               <div>
-                <h2>What saturates first?</h2>
-                <p>100k redirects/s. Redis is unavailable. Commit before seeing the model.</p>
+                <h2>{ru ? 'Что насытится первым?' : 'What saturates first?'}</h2>
+                <p>{ru
+                  ? `${Math.round(report.workload.redirectRps / 1000)}k редиректов/с. Зафиксируйте прогноз до просмотра модели.`
+                  : `${Math.round(report.workload.redirectRps / 1000)}k redirects/s. Commit before seeing the model.`}</p>
               </div>
             </div>
             <div className="prediction-options" role="radiogroup" aria-label="Predicted first bottleneck">
-              {predictions.map((option) => (
+              {localizedPredictions.map((option) => (
                 <button
                   key={option.value}
                   type="button"
@@ -199,7 +219,7 @@ export function BottleneckPanel({
                   onClick={() => onPredictionChange(option.value)}
                 >
                   <span>
-                    <strong>{bottleneckLabels[option.value]}</strong>
+                    <strong>{labels[option.value]}</strong>
                     <small>{option.detail}</small>
                   </span>
                   <i>{prediction === option.value ? <Check size={14} /> : null}</i>
@@ -207,11 +227,11 @@ export function BottleneckPanel({
               ))}
             </div>
             <label className="prediction-rationale">
-              <span>Your reasoning</span>
+              <span>{ru ? 'Ваше рассуждение' : 'Your reasoning'}</span>
               <textarea
                 value={rationale}
                 onChange={(event) => onRationaleChange(event.target.value)}
-                placeholder="State the assumption that drives your prediction…"
+                placeholder={ru ? 'Назовите допущение, определяющее прогноз…' : 'State the assumption that drives your prediction…'}
               />
             </label>
             <button
@@ -220,7 +240,7 @@ export function BottleneckPanel({
               disabled={!prediction || rationale.trim().length < 8}
               onClick={onCommitPrediction}
             >
-              Commit prediction <ChevronDown size={17} />
+              {ru ? 'Зафиксировать прогноз' : 'Commit prediction'} <ChevronDown size={17} />
             </button>
           </section>
         ) : (
@@ -228,14 +248,20 @@ export function BottleneckPanel({
             <section className={`prediction-result ${correctPrediction ? 'is-correct' : 'is-missed'}`}>
               <span>{correctPrediction ? <ShieldCheck size={18} /> : <Gauge size={18} />}</span>
               <div>
-                <strong>{correctPrediction ? 'Prediction holds' : 'Model found a different limit'}</strong>
+                <strong>{correctPrediction
+                  ? ru ? 'Прогноз подтвердился' : 'Prediction holds'
+                  : ru ? 'Модель нашла другое ограничение' : 'Model found a different limit'}</strong>
                 <p>
-                  {correctPrediction
-                    ? `The untuned design fails first at ${bottleneckLabels[baseline.bottleneck].toLowerCase()}.`
-                    : `You chose ${prediction ? bottleneckLabels[prediction].toLowerCase() : '—'}; the untuned model points to ${bottleneckLabels[baseline.bottleneck].toLowerCase()}.`}
-                  {nextLimitMoved
-                    ? ` After tuning, pressure moves to ${bottleneckLabels[report.bottleneck].toLowerCase()}.`
-                    : ''}
+                  {ru
+                    ? correctPrediction
+                      ? `Без настройки первым отказывает: ${labels[baseline.bottleneck].toLowerCase()}.`
+                      : `Ваш выбор: ${prediction ? labels[prediction].toLowerCase() : '—'}; модель указывает на ${labels[baseline.bottleneck].toLowerCase()}.`
+                    : correctPrediction
+                      ? `The untuned design fails first at ${labels[baseline.bottleneck].toLowerCase()}.`
+                      : `You chose ${prediction ? labels[prediction].toLowerCase() : '—'}; the untuned model points to ${labels[baseline.bottleneck].toLowerCase()}.`}
+                  {nextLimitMoved ? ru
+                    ? ` После настройки нагрузка смещается на ${labels[report.bottleneck].toLowerCase()}.`
+                    : ` After tuning, pressure moves to ${labels[report.bottleneck].toLowerCase()}.` : ''}
                 </p>
               </div>
             </section>
@@ -243,10 +269,12 @@ export function BottleneckPanel({
             <section className="capacity-outcome" aria-live="polite">
               <header>
                 <div>
-                  <span className={`capacity-status is-${report.status}`}><i /> {statusLabels[report.status]}</span>
-                  <strong>{currency.format(report.cost.total)}<small>/mo</small></strong>
+                  <span className={`capacity-status is-${report.status}`}><i /> {ru
+                    ? ({ 'within-envelope': 'В пределах', 'at-risk': 'Под риском', saturated: 'Насыщено' } as const)[report.status]
+                    : statusLabels[report.status]}</span>
+                  <strong>{currency.format(report.cost.total)}<small>{ru ? '/мес' : '/mo'}</small></strong>
                 </div>
-                <span className="estimate-label">Estimated</span>
+                <span className="estimate-label">{ru ? 'Оценка' : 'Estimated'}</span>
               </header>
               <div className="defense-metrics">
                 <ComparisonMetric
@@ -254,36 +282,41 @@ export function BottleneckPanel({
                   value={`${report.metrics.p99} ms`}
                   baseline={`${baseline.metrics.p99} ms`}
                   tone={report.metrics.p99 < baseline.metrics.p99 ? 'good' : 'warning'}
+                  locale={locale}
                 />
                 <ComparisonMetric
                   label="DB CPU"
                   value={`${report.metrics.dbCpu}%`}
                   baseline={`${baseline.metrics.dbCpu}%`}
                   tone={report.metrics.dbCpu < baseline.metrics.dbCpu ? 'good' : 'warning'}
+                  locale={locale}
                 />
                 <ComparisonMetric
-                  label="Cost / 1M"
+                  label={ru ? 'Цена / 1M' : 'Cost / 1M'}
                   value={`$${report.cost.perMillionRedirects.toFixed(3)}`}
                   baseline={`$${baseline.cost.perMillionRedirects.toFixed(3)}`}
+                  locale={locale}
                 />
               </div>
               <p className={`cost-delta ${costDelta > 0 ? 'is-increase' : 'is-saving'}`}>
                 <CircleDollarSign size={15} />
                 {costDelta === 0
-                  ? 'Same monthly envelope as the untuned design.'
-                  : `${costDelta > 0 ? '+' : '−'}${currency.format(Math.abs(costDelta))}/mo versus untuned.`}
+                  ? ru ? 'Та же месячная стоимость, что без настройки.' : 'Same monthly envelope as the untuned design.'
+                  : ru
+                    ? `${costDelta > 0 ? '+' : '−'}${currency.format(Math.abs(costDelta))}/мес относительно базовой схемы.`
+                    : `${costDelta > 0 ? '+' : '−'}${currency.format(Math.abs(costDelta))}/mo versus untuned.`}
               </p>
             </section>
 
             <section className="calibration-section">
               <div className="section-title-row calibration-heading">
                 <div>
-                  <h2>Calibration</h2>
-                  <p>Verified rates and capacity evidence stay separate.</p>
+                  <h2>{ru ? 'Калибровка' : 'Calibration'}</h2>
+                  <p>{ru ? 'Цены и данные о ёмкости проверяются отдельно.' : 'Verified rates and capacity evidence stay separate.'}</p>
                 </div>
               </div>
               <SegmentedControl
-                label="Pricing"
+                label={ru ? 'Цены' : 'Pricing'}
                 value={report.calibration.pricing.id}
                 options={pricingPackOptions}
                 onChange={(pricingPackId) => onTuningChange({ ...tuning, pricingPackId })}
@@ -292,17 +325,19 @@ export function BottleneckPanel({
                 <BadgeCheck size={15} />
                 <span>
                   <strong>
-                    {pricingPack.status === 'verified-rates' ? 'Verified unit rates' : 'Reference units'}
+                    {pricingPack.status === 'verified-rates'
+                      ? ru ? 'Проверенные тарифы' : 'Verified unit rates'
+                      : ru ? 'Учебные единицы' : 'Reference units'}
                   </strong>
                   <small>
                     {pricingPack.status === 'verified-rates'
                       ? `${pricingPack.region} · checked ${pricingPack.checkedAt} · ${pricingPack.sources.length} sources`
-                      : 'Training baseline · no provider rate card'}
+                      : ru ? 'Учебная база · без тарифа провайдера' : 'Training baseline · no provider rate card'}
                   </small>
                 </span>
               </div>
               <SegmentedControl
-                label="Capacity"
+                label={ru ? 'Ёмкость' : 'Capacity'}
                 value={report.calibration.capacity.id}
                 options={benchmarkPackOptions}
                 onChange={(benchmarkPackId) => onTuningChange({ ...tuning, benchmarkPackId })}
@@ -311,10 +346,12 @@ export function BottleneckPanel({
                 <FlaskConical size={15} />
                 <span>
                   <strong>
-                    {benchmarkPack.status === 'mixed-measured' ? 'Measured + derived' : 'Estimated capacity'}
+                    {benchmarkPack.status === 'mixed-measured'
+                      ? ru ? 'Измерено + рассчитано' : 'Measured + derived'
+                      : ru ? 'Оценочная ёмкость' : 'Estimated capacity'}
                   </strong>
                   <small>
-                    {benchmarkPack.environment?.hardware ?? 'Transparent scenario baseline'}
+                    {benchmarkPack.environment?.hardware ?? (ru ? 'Прозрачная учебная база' : 'Transparent scenario baseline')}
                   </small>
                 </span>
               </div>
@@ -323,16 +360,16 @@ export function BottleneckPanel({
             <section className="tuning-section">
               <div className="section-title-row">
                 <div>
-                  <h2>Tune the read path</h2>
-                  <p>Every choice updates traffic and cost live.</p>
+                  <h2>{ru ? 'Настройте путь чтения' : 'Tune the read path'}</h2>
+                  <p>{ru ? 'Каждый выбор сразу меняет трафик и стоимость.' : 'Every choice updates traffic and cost live.'}</p>
                 </div>
-                <button type="button" onClick={onReset} aria-label="Reset tuning" title="Reset tuning">
+                <button type="button" onClick={onReset} aria-label={ru ? 'Сбросить настройки' : 'Reset tuning'} title={ru ? 'Сбросить настройки' : 'Reset tuning'}>
                   <RotateCcw size={16} />
                 </button>
               </div>
 
               <SegmentedControl
-                label="Cache target"
+                label={ru ? 'Цель кеша' : 'Cache target'}
                 value={tuning.cacheHitRate}
                 options={[
                   { value: 0.9, label: '90%' },
@@ -342,20 +379,20 @@ export function BottleneckPanel({
                 onChange={(cacheHitRate) => onTuningChange({ ...tuning, cacheHitRate })}
               />
               <div className="tuning-control tuning-toggle-row">
-                <span><Database size={15} /> Lookup index</span>
+                <span><Database size={15} /> {ru ? 'Индекс поиска' : 'Lookup index'}</span>
                 <button
                   type="button"
                   role="switch"
                   aria-checked={tuning.indexedLookup}
                   className={`tuning-switch ${tuning.indexedLookup ? 'is-active' : ''}`}
-                  aria-label="Use indexed lookup"
+                  aria-label={ru ? 'Использовать индекс' : 'Use indexed lookup'}
                   onClick={() => onTuningChange({ ...tuning, indexedLookup: !tuning.indexedLookup })}
                 >
                   <i />
                 </button>
               </div>
               <SegmentedControl
-                label="Connection pool"
+                label={ru ? 'Пул соединений' : 'Connection pool'}
                 value={tuning.poolSize}
                 options={[
                   { value: 100, label: '100' },
@@ -365,17 +402,17 @@ export function BottleneckPanel({
                 onChange={(poolSize) => onTuningChange({ ...tuning, poolSize })}
               />
               <SegmentedControl
-                label="Read replicas"
+                label={ru ? 'Реплики чтения' : 'Read replicas'}
                 value={tuning.readReplicas}
                 options={[
-                  { value: 0, label: 'None' },
+                  { value: 0, label: ru ? 'Нет' : 'None' },
                   { value: 1, label: '+1' },
                   { value: 2, label: '+2' },
                 ]}
                 onChange={(readReplicas) => onTuningChange({ ...tuning, readReplicas })}
               />
               <SegmentedControl
-                label="Database profile"
+                label={ru ? 'Профиль БД' : 'Database profile'}
                 value={tuning.databaseProfile}
                 options={[
                   { value: 'compact', label: '4 vCPU' },
@@ -388,22 +425,22 @@ export function BottleneckPanel({
 
             <details className="capacity-assumptions">
               <summary>
-                <span>Why this estimate</span>
+                <span>{ru ? 'Почему такая оценка' : 'Why this estimate'}</span>
                 <ChevronDown size={16} />
               </summary>
               <dl>
-                <div><dt>DB reads</dt><dd>{Math.round(report.workload.databaseReadRps / 1000)}k/s</dd></div>
-                <div><dt>Cache utilization</dt><dd>{percent(report.utilization.cache)}</dd></div>
-                <div><dt>Effective hit rate</dt><dd>{percent(report.workload.effectiveCacheHitRate)}</dd></div>
-                <div><dt>Retained rows</dt><dd>{(report.workload.retainedRows / 1_000_000_000).toFixed(1)}B</dd></div>
-                <div><dt>Raw storage</dt><dd>{(report.workload.rawStorageGiB / 1024).toFixed(1)} TiB</dd></div>
+                <div><dt>{ru ? 'Чтение БД' : 'DB reads'}</dt><dd>{Math.round(report.workload.databaseReadRps / 1000)}k/s</dd></div>
+                <div><dt>{ru ? 'Загрузка кеша' : 'Cache utilization'}</dt><dd>{percent(report.utilization.cache)}</dd></div>
+                <div><dt>{ru ? 'Эффективный hit rate' : 'Effective hit rate'}</dt><dd>{percent(report.workload.effectiveCacheHitRate)}</dd></div>
+                <div><dt>{ru ? 'Строк хранится' : 'Retained rows'}</dt><dd>{(report.workload.retainedRows / 1_000_000_000).toFixed(1)}B</dd></div>
+                <div><dt>{ru ? 'Сырые данные' : 'Raw storage'}</dt><dd>{(report.workload.rawStorageGiB / 1024).toFixed(1)} TiB</dd></div>
               </dl>
               <ul>
                 {report.assumptions.map((assumption) => <li key={assumption}>{assumption}</li>)}
               </ul>
               {pricingPack.sources.length > 0 && (
                 <div className="calibration-sources">
-                  <span>Rate sources</span>
+                  <span>{ru ? 'Источники цен' : 'Rate sources'}</span>
                   <div>
                     {pricingPack.sources.map((source) => (
                       <a key={source.service} href={source.url} target="_blank" rel="noreferrer">
@@ -416,7 +453,7 @@ export function BottleneckPanel({
             </details>
 
             <button className="defend-design" type="button" onClick={onDefend}>
-              <MessageCircle size={18} /> Defend this design
+              <MessageCircle size={18} /> {ru ? 'Защитить решение' : 'Defend this design'}
             </button>
           </>
         )}

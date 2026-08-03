@@ -54,6 +54,20 @@ describe('replay serialization', () => {
     expect(parsed.value.attempt.initial.capacity).toEqual(attempt.initial.capacity)
   })
 
+  it('round-trips compact replica and shard topology on replay nodes', () => {
+    const attempt = createCompletedTestAttempt()
+    attempt.initial.architecture.nodes[1].data.replicas = 3
+    attempt.initial.architecture.nodes[1].data.shards = 4
+    const parsed = parseReplayEnvelope(serializeReplayEnvelope(attempt))
+
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+    expect(parsed.value.attempt.initial.architecture.nodes[1].data).toMatchObject({
+      replicas: 3,
+      shards: 4,
+    })
+  })
+
   it('round-trips the optional news-feed tuning without changing the v1 envelope', () => {
     const attempt = createCompletedTestAttempt()
     attempt.challengeId = 'news-feed'

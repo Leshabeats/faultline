@@ -144,16 +144,20 @@ const isPosition = (value: unknown) =>
 
 const isNodeData = (value: unknown): value is ReplayNodeV1['data'] =>
   isRecord(value) &&
-  hasOnlyKeys(value, ['kind', 'label']) &&
+  hasOnlyKeys(value, ['kind', 'label', 'replicas', 'shards']) &&
   componentKinds.includes(value.kind as ComponentKind) &&
-  isBoundedString(value.label)
+  isBoundedString(value.label) &&
+  (value.replicas === undefined || (isNonNegativeInteger(value.replicas) && value.replicas >= 1 && value.replicas <= 16)) &&
+  (value.shards === undefined || (isNonNegativeInteger(value.shards) && value.shards >= 1 && value.shards <= 64))
 
 const isPartialNodeData = (value: unknown) => {
   if (!isRecord(value)) return false
   return (
-    hasOnlyKeys(value, ['kind', 'label']) &&
+    hasOnlyKeys(value, ['kind', 'label', 'replicas', 'shards']) &&
     (value.kind === undefined || componentKinds.includes(value.kind as ComponentKind)) &&
-    (value.label === undefined || isBoundedString(value.label))
+    (value.label === undefined || isBoundedString(value.label)) &&
+    (value.replicas === undefined || (isNonNegativeInteger(value.replicas) && value.replicas >= 1 && value.replicas <= 16)) &&
+    (value.shards === undefined || (isNonNegativeInteger(value.shards) && value.shards >= 1 && value.shards <= 64))
   )
 }
 

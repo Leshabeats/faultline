@@ -2,13 +2,13 @@ import type {
   CapacityTuning,
   ComponentKind,
   FaultMode,
-  SimulationInput,
+  LoadMultiplier,
 } from '../domain/system'
 
 export const REPLAY_SCHEMA = 'faultline.replay' as const
 export const REPLAY_SCHEMA_VERSION = 1 as const
 
-export type ReplayLoadMultiplier = SimulationInput['loadMultiplier']
+export type ReplayLoadMultiplier = LoadMultiplier
 export type ReplayEventSource = 'user' | 'system' | 'interviewer'
 
 export interface ReplayPositionV1 {
@@ -19,6 +19,8 @@ export interface ReplayPositionV1 {
 export interface ReplayNodeDataV1 {
   kind: ComponentKind
   label: string
+  replicas?: number
+  shards?: number
 }
 
 /** Serializable subset of a React Flow system node. */

@@ -146,6 +146,13 @@ function validateTopology(topology: TopologySummary) {
       )
     }
   }
+  for (const [kind, count] of Object.entries(topology.replicaCounts ?? {})) {
+    if (count !== undefined && (!Number.isFinite(count) || count < 0)) {
+      throw new TypeError(
+        `Topology replica count for ${kind} must be a non-negative finite number`,
+      )
+    }
+  }
 }
 
 function validateChallengeSuite() {
@@ -179,6 +186,7 @@ function evaluateCases(
       nodeCount: topology.nodeCount,
       edgeCount: topology.edgeCount,
       componentCounts: { ...topology.componentCounts },
+      replicaCounts: topology.replicaCounts ? { ...topology.replicaCounts } : undefined,
       criticalPathConnected: topology.criticalPathConnected,
     })
     const context = { topology, snapshot }

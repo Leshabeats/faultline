@@ -39,7 +39,12 @@ export const toReplayNode = (node: SystemFlowNode): ReplayNodeV1 => ({
   id: node.id,
   type: 'system',
   position: { ...node.position },
-  data: { kind: node.data.kind, label: node.data.label },
+  data: {
+    kind: node.data.kind,
+    label: node.data.label,
+    ...(node.data.replicas && node.data.replicas > 1 ? { replicas: node.data.replicas } : {}),
+    ...(node.data.shards && node.data.shards > 1 ? { shards: node.data.shards } : {}),
+  },
 })
 
 export const toReplayEdge = (edge: SystemFlowEdge): ReplayEdgeV1 => ({
@@ -95,6 +100,7 @@ export const presentReplayFrame = (
     nodeCount: baseNodes.length,
     edgeCount: baseEdges.length,
     componentCounts: analysis.componentCounts,
+    replicaCounts: analysis.replicaCounts,
     criticalPathConnected: analysis.criticalPathConnected,
     capacity: frame.capacity,
     scenario,
@@ -118,7 +124,7 @@ export const presentReplayFrame = (
     } else if (
       frame.fault === 'cache-outage' &&
       node.data.kind === 'cache' &&
-      routedCaches.length > 1
+      (analysis.replicaCounts.cache ?? routedCaches.length) > 1
     ) {
       health = node.id === faultedCacheId ? 'failed' : 'degraded'
       detail = node.id === faultedCacheId ? 'Unavailable' : detail
