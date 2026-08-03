@@ -1,4 +1,5 @@
-import type { FaultMode } from '../domain/system'
+import type { CapacityTuning, FaultMode, ScenarioId } from '../domain/system'
+import type { SystemFlowEdge, SystemFlowNode } from '../canvas/types'
 
 export interface ChallengeCase {
   id: string
@@ -10,7 +11,7 @@ export interface ChallengeCase {
 }
 
 export interface ChallengeDefinition {
-  id: string
+  id: ScenarioId
   title: string
   difficulty: 'Easy' | 'Medium' | 'Hard'
   summary: string
@@ -18,4 +19,25 @@ export interface ChallengeDefinition {
   scale: string[]
   cases: ChallengeCase[]
   rubric: string[]
+}
+
+export interface ChallengePack {
+  id: ScenarioId
+  definition: ChallengeDefinition
+  seedNodes: SystemFlowNode[]
+  seedEdges: SystemFlowEdge[]
+  defaults: {
+    load: 1 | 3 | 10
+    fault: FaultMode
+    tuning: CapacityTuning
+  }
+  faults: FaultMode[]
+  panel: 'capacity' | 'fanout'
+  telemetryLabels: {
+    throughput: string
+    p99: string
+    errorRate: string
+    dbCpu: string
+  }
+  canvasLabel: string
 }

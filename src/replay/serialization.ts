@@ -1,4 +1,4 @@
-import type { ComponentKind, FaultMode } from '../domain/system'
+import type { CapacityTuning, ComponentKind, FaultMode } from '../domain/system'
 import { cloneInitialReplayState } from './reducer'
 import {
   REPLAY_SCHEMA,
@@ -55,8 +55,22 @@ const faultModes: FaultMode[] = [
   'slow-database',
   'network-partition',
   'retry-storm',
+  'celebrity-spike',
+  'worker-outage',
+  'hot-key',
+  'duplicate-delivery',
 ]
 const loads: ReplayLoadMultiplier[] = [1, 3, 10]
+const cacheHitRates = [0.9, 0.95, 0.99]
+const poolSizes = [100, 300, 600]
+const readReplicaCounts = [0, 1, 2]
+const databaseProfiles = ['compact', 'balanced', 'performance']
+const pricingPackIds = ['reference-2026.08', 'aws-us-east-1-2026.07']
+const benchmarkPackIds = ['reference-2026.08', 'local-m1-pro-2026.08']
+const fanoutStrategies = ['write', 'read', 'hybrid']
+const fanoutWorkers = [4, 16, 64]
+const fanoutBatchSizes = [100, 500, 2000]
+const celebrityThresholds = [100_000, 1_000_000, 10_000_000]
 const sources = ['user', 'system', 'interviewer'] as const
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -89,6 +103,35 @@ const isLoad = (value: unknown): value is ReplayLoadMultiplier =>
 
 const isFault = (value: unknown): value is FaultMode =>
   faultModes.includes(value as FaultMode)
+
+const isCapacityTuning = (value: unknown) =>
+  isRecord(value) &&
+  hasOnlyKeys(value, [
+    'cacheHitRate',
+    'indexedLookup',
+    'poolSize',
+    'readReplicas',
+    'databaseProfile',
+    'pricingPackId',
+    'benchmarkPackId',
+    'fanoutStrategy',
+    'fanoutWorkers',
+    'fanoutBatchSize',
+    'celebrityThreshold',
+    'deduplication',
+  ]) &&
+  cacheHitRates.includes(value.cacheHitRate as number) &&
+  typeof value.indexedLookup === 'boolean' &&
+  poolSizes.includes(value.poolSize as number) &&
+  readReplicaCounts.includes(value.readReplicas as number) &&
+  databaseProfiles.includes(value.databaseProfile as string) &&
+  (value.pricingPackId === undefined || pricingPackIds.includes(value.pricingPackId as string)) &&
+  (value.benchmarkPackId === undefined || benchmarkPackIds.includes(value.benchmarkPackId as string)) &&
+  (value.fanoutStrategy === undefined || fanoutStrategies.includes(value.fanoutStrategy as string)) &&
+  (value.fanoutWorkers === undefined || fanoutWorkers.includes(value.fanoutWorkers as number)) &&
+  (value.fanoutBatchSize === undefined || fanoutBatchSizes.includes(value.fanoutBatchSize as number)) &&
+  (value.celebrityThreshold === undefined || celebrityThresholds.includes(value.celebrityThreshold as number)) &&
+  (value.deduplication === undefined || typeof value.deduplication === 'boolean')
 
 const isIsoDate = (value: unknown): value is string =>
   isBoundedString(value) && Number.isFinite(Date.parse(value))
@@ -241,6 +284,11 @@ const isEvent = (value: unknown): value is ReplayEventV1 => {
         isFault(payload.fault) &&
         isOptionalBoundedString(payload.targetNodeId)
       )
+    case 'capacity.changed':
+      return (
+        hasOnlyKeys(payload, ['capacity']) &&
+        isCapacityTuning(payload.capacity)
+      )
     case 'node.added':
       return hasOnlyKeys(payload, ['node']) && isNode(payload.node)
     case 'node.updated': {
@@ -324,10 +372,11 @@ export function validateReplayAttempt(value: unknown): value is ReplayAttemptV1 
     !isIsoDate(value.updatedAt) ||
     !isNonNegativeInteger(value.durationMs) ||
     !isRecord(value.initial) ||
-    !hasOnlyKeys(value.initial, ['architecture', 'load', 'fault']) ||
+    !hasOnlyKeys(value.initial, ['architecture', 'load', 'fault', 'capacity']) ||
     !isArchitecture(value.initial.architecture) ||
     !isLoad(value.initial.load) ||
     !isFault(value.initial.fault) ||
+    (value.initial.capacity !== undefined && !isCapacityTuning(value.initial.capacity)) ||
     !Array.isArray(value.events) ||
     value.events.length > REPLAY_IMPORT_LIMITS.maxEvents ||
     !value.events.every(isEvent) ||
@@ -376,6 +425,7 @@ interface LegacyScenarioV1 {
   challenge: string
   load: ReplayLoadMultiplier
   fault: FaultMode
+  capacity?: CapacityTuning
   nodes: LegacyScenarioNode[]
   edges: LegacyScenarioEdge[]
 }
@@ -398,6 +448,7 @@ const isLegacyScenario = (value: unknown): value is LegacyScenarioV1 =>
   isBoundedString(value.challenge) &&
   isLoad(value.load) &&
   isFault(value.fault) &&
+  (value.capacity === undefined || isCapacityTuning(value.capacity)) &&
   Array.isArray(value.nodes) &&
   value.nodes.length <= REPLAY_IMPORT_LIMITS.maxNodes &&
   value.nodes.every(isLegacyScenarioNode) &&
@@ -451,6 +502,7 @@ const migrateLegacyScenario = (
         architecture,
         load: scenario.load,
         fault: scenario.fault,
+        ...(scenario.capacity ? { capacity: { ...scenario.capacity } } : {}),
       },
       events: [],
     },

@@ -1,5 +1,6 @@
 import type {
   ComponentKind,
+  ScenarioId,
   SimulationInput,
   SimulationMetrics,
   SimulationSnapshot,
@@ -51,6 +52,7 @@ export type JudgeCaseResult = PublicCaseResult | HiddenCaseResult
 export type ScoreDimension =
   | 'reliability'
   | 'performance'
+  | 'freshness'
   | 'resilience'
   | 'clarity'
 
@@ -63,13 +65,13 @@ export interface ScoreBreakdownItem {
 }
 
 export interface JudgeReport {
-  judgeVersion: 'url-shortener-v1'
-  challengeId: 'url-shortener'
+  judgeVersion: string
+  challengeId: ScenarioId
   passed: boolean
   score: number
   maxScore: 100
   passedCases: number
-  totalCases: 5
+  totalCases: number
   cases: JudgeCaseResult[]
   scoreBreakdown: ScoreBreakdownItem[]
 }

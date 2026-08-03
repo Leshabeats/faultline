@@ -1,5 +1,6 @@
 import type { SystemFlowEdge, SystemFlowNode } from '../canvas/types'
-import type { ComponentHealth, FaultMode } from '../domain/system'
+import type { ComponentHealth, FaultMode, ScenarioId } from '../domain/system'
+import type { CapacityTuning } from '../domain/system'
 import { computeSimulation, formatMetric } from '../simulation/engine'
 import { analyzeTopology } from '../simulation/topology'
 import { serializeReplayEnvelope } from './serialization'
@@ -55,10 +56,12 @@ export const toReplayInitial = (
   edges: SystemFlowEdge[],
   load: 1 | 3 | 10,
   fault: FaultMode,
+  capacity?: CapacityTuning,
 ): ReplayInitialStateV1 => ({
   architecture: { nodes: nodes.map(toReplayNode), edges: edges.map(toReplayEdge) },
   load,
   fault,
+  ...(capacity ? { capacity: { ...capacity } } : {}),
 })
 
 const fromReplayNode = (node: ReplayNodeV1, load: 1 | 3 | 10): SystemFlowNode => ({
@@ -80,6 +83,7 @@ export const presentReplayFrame = (
   frame: ReplayPlaybackStateV1,
   tick: number,
   paused: boolean,
+  scenario: ScenarioId = 'url-shortener',
 ) => {
   const baseNodes = frame.architecture.nodes.map((node) => fromReplayNode(node, frame.load))
   const baseEdges = frame.architecture.edges.map((edge) => fromReplayEdge(edge, frame.load, paused))
@@ -92,6 +96,8 @@ export const presentReplayFrame = (
     edgeCount: baseEdges.length,
     componentCounts: analysis.componentCounts,
     criticalPathConnected: analysis.criticalPathConnected,
+    capacity: frame.capacity,
+    scenario,
   })
   const routedNodeIdSet = new Set(analysis.routedNodeIds)
   const routedCaches = baseNodes.filter(
@@ -123,7 +129,13 @@ export const presentReplayFrame = (
   const edges = baseEdges.map((edge) => {
     const targetHealth = healthByNode.get(edge.target) ?? 'healthy'
     let label = edge.label
-    if (edge.id === 'clients-edge') {
+    if (scenario === 'news-feed' && edge.id === 'feed-users-api') {
+      label = `${formatMetric(simulation.metrics.throughput, 'throughput')} deliveries/s`
+    } else if (scenario === 'news-feed' && edge.id === 'feed-api-queue') {
+      label = frame.fault === 'celebrity-spike' ? '50M fan-out' : `${formatMetric(simulation.metrics.queueDepth, 'queueDepth')} queued`
+    } else if (scenario === 'news-feed' && edge.id === 'feed-queue-workers') {
+      label = formatMetric(simulation.metrics.p99, 'p99')
+    } else if (edge.id === 'clients-edge') {
       label = `${formatMetric(simulation.metrics.throughput, 'throughput')} req/s`
     } else if (edge.id === 'api-cache') {
       label = `${Math.round(simulation.metrics.cacheMiss)}% miss`

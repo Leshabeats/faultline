@@ -8,27 +8,47 @@ import {
   type NodeChange,
 } from '@xyflow/react'
 import { ArchitectureCanvas } from './canvas/ArchitectureCanvas'
-import { seedEdges, seedNodes } from './canvas/seed'
 import type { SystemFlowEdge, SystemFlowNode } from './canvas/types'
 import { InterviewerPanel } from './components/InterviewerPanel'
+import {
+  BottleneckPanel,
+  type BottleneckPrediction,
+} from './components/BottleneckPanel'
 import { ChallengePanel } from './components/ChallengePanel'
+import { FanoutPanel, type FanoutPrediction } from './components/FanoutPanel'
 import { HistoryPanel, type HistoryAttemptItem } from './components/HistoryPanel'
 import { ReplayPanel } from './components/ReplayPanel'
 import { ReplayTimeline } from './components/ReplayTimeline'
 import { TopBar } from './components/TopBar'
-import { urlShortenerChallenge } from './challenges/urlShortener'
+import {
+  challengeOptions,
+  clonePackEdges,
+  clonePackNodes,
+  getChallengePack,
+} from './challenges/registry'
 import {
   COMPONENT_LABELS,
   FAULT_LABELS,
   type ComponentHealth,
   type ComponentKind,
+  type CapacityTuning,
   type FaultMode,
+  type ScenarioId,
   type TelemetryPoint,
   type TimelineEvent,
 } from './domain/system'
+import {
+  DEFAULT_CAPACITY_TUNING,
+  estimateCapacity,
+} from './capacity/model'
+import {
+  DEFAULT_NEWS_FEED_TUNING,
+  estimateNewsFeed,
+  normalizeNewsFeedTuning,
+} from './newsFeed/model'
 import { interviewRouter } from './interview/router'
 import type { InterviewAction, InterviewContext } from './interview/types'
-import { judgeUrlShortener, type JudgeReport } from './judge'
+import { judgeNewsFeed, judgeUrlShortener, type JudgeReport } from './judge'
 import { computeSimulation, formatMetric } from './simulation/engine'
 import { analyzeTopology } from './simulation/topology'
 import {
@@ -51,7 +71,7 @@ import {
   toReplayInitial,
   toReplayNode,
 } from './replay/presentation'
-import { verifyImportedUrlShortenerAttempt } from './replay/verification'
+import { verifyImportedAttempt } from './replay/verification'
 
 const toneForHealth = (health: ComponentHealth) => {
   if (health === 'failed' || health === 'hot') return 'critical' as const
@@ -111,8 +131,10 @@ const createReplayRepository = () => {
 }
 
 export function App() {
-  const [nodes, setNodes] = useState<SystemFlowNode[]>(seedNodes)
-  const [edges, setEdges] = useState<SystemFlowEdge[]>(seedEdges)
+  const [challengeId, setChallengeId] = useState<ScenarioId>('url-shortener')
+  const activePack = getChallengePack(challengeId)
+  const [nodes, setNodes] = useState<SystemFlowNode[]>(() => clonePackNodes(getChallengePack('url-shortener')))
+  const [edges, setEdges] = useState<SystemFlowEdge[]>(() => clonePackEdges(getChallengePack('url-shortener')))
   const [activeKind, setActiveKind] = useState<ComponentKind>('cache')
   const [load, setLoad] = useState<1 | 3 | 10>(10)
   const [fault, setFault] = useState<FaultMode>('cache-outage')
@@ -120,6 +142,14 @@ export function App() {
   const [tick, setTick] = useState(0)
   const [elapsedSeconds, setElapsedSeconds] = useState(18 * 60 + 42)
   const [interviewerOpen, setInterviewerOpen] = useState(true)
+  const [rightPanelMode, setRightPanelMode] = useState<'interview' | 'bottleneck'>('bottleneck')
+  const [capacity, setCapacity] = useState<CapacityTuning>(DEFAULT_CAPACITY_TUNING)
+  const [bottleneckPrediction, setBottleneckPrediction] = useState<BottleneckPrediction | null>(null)
+  const [predictionRationale, setPredictionRationale] = useState('')
+  const [predictionLocked, setPredictionLocked] = useState(false)
+  const [fanoutPrediction, setFanoutPrediction] = useState<FanoutPrediction | null>(null)
+  const [fanoutPredictionRationale, setFanoutPredictionRationale] = useState('')
+  const [fanoutPredictionLocked, setFanoutPredictionLocked] = useState(false)
   const [challengeOpen, setChallengeOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [historyNotice, setHistoryNotice] = useState<{
@@ -149,16 +179,18 @@ export function App() {
   const [replaySpeed, setReplaySpeed] = useState(1)
   const draftAttemptRef = useRef<ReplayAttemptV1 | null>(null)
   const recordingElapsedMsRef = useRef(0)
-  const canonicalStateRef = useRef({ nodes, edges, load, fault })
+  const canonicalStateRef = useRef({ nodes, edges, load, fault, capacity, challengeId })
   const liveStateBeforeReplayRef = useRef<{
     nodes: SystemFlowNode[]
     edges: SystemFlowEdge[]
     load: 1 | 3 | 10
     fault: FaultMode
+    capacity: CapacityTuning
+    challengeId: ScenarioId
     playing: boolean
   } | null>(null)
 
-  canonicalStateRef.current = { nodes, edges, load, fault }
+  canonicalStateRef.current = { nodes, edges, load, fault, capacity, challengeId }
 
   // Simulation topology must not be invalidated by the live health/detail fields
   // that we write back into React Flow nodes on every tick.
@@ -178,6 +210,7 @@ export function App() {
   const snapshot = useMemo(
     () =>
       computeSimulation({
+        scenario: challengeId,
         loadMultiplier: load,
         fault,
         tick,
@@ -185,8 +218,62 @@ export function App() {
         edgeCount: edges.length,
         componentCounts,
         criticalPathConnected,
+        capacity,
       }),
-    [componentCounts, criticalPathConnected, edges.length, fault, load, nodes.length, tick],
+    [capacity, challengeId, componentCounts, criticalPathConnected, edges.length, fault, load, nodes.length, tick],
+  )
+
+  const capacityReport = useMemo(
+    () => estimateCapacity({
+      loadMultiplier: load,
+      fault,
+      tuning: capacity,
+      componentCounts,
+      criticalPathConnected,
+    }),
+    [capacity, componentCounts, criticalPathConnected, fault, load],
+  )
+  const baselineCapacityReport = useMemo(
+    () => estimateCapacity({
+      loadMultiplier: load,
+      fault,
+      tuning: {
+        ...DEFAULT_CAPACITY_TUNING,
+        pricingPackId: capacity.pricingPackId,
+        benchmarkPackId: capacity.benchmarkPackId,
+      },
+      componentCounts,
+      criticalPathConnected,
+    }),
+    [
+      capacity.benchmarkPackId,
+      capacity.pricingPackId,
+      componentCounts,
+      criticalPathConnected,
+      fault,
+      load,
+    ],
+  )
+
+  const newsFeedReport = useMemo(
+    () => estimateNewsFeed({
+      loadMultiplier: load,
+      fault,
+      tuning: capacity,
+      componentCounts,
+      criticalPathConnected,
+    }),
+    [capacity, componentCounts, criticalPathConnected, fault, load],
+  )
+  const baselineNewsFeedReport = useMemo(
+    () => estimateNewsFeed({
+      loadMultiplier: load,
+      fault,
+      tuning: DEFAULT_NEWS_FEED_TUNING,
+      componentCounts,
+      criticalPathConnected,
+    }),
+    [componentCounts, criticalPathConnected, fault, load],
   )
 
   const replayFrame = useMemo(
@@ -204,9 +291,8 @@ export function App() {
   const historyItems = useMemo<HistoryAttemptItem[]>(
     () => savedAttempts.map((attempt) => ({
       id: attempt.id,
-      title: attempt.challengeId === urlShortenerChallenge.id
-        ? urlShortenerChallenge.title
-        : attempt.challengeId,
+      title: challengeOptions.find((option) => option.id === attempt.challengeId)?.title
+        ?? attempt.challengeId,
       completedAt: attempt.updatedAt,
       durationMs: attempt.durationMs,
       score: attempt.summary?.score,
@@ -220,9 +306,11 @@ export function App() {
     Array.from({ length: 22 }, (_, index) => ({
       tick: index - 21,
       ...computeSimulation({
+        scenario: 'url-shortener',
         loadMultiplier: 10,
         fault: 'cache-outage',
         tick: index - 21,
+        capacity: DEFAULT_CAPACITY_TUNING,
       }).metrics,
     })),
   )
@@ -257,13 +345,14 @@ export function App() {
       const startedAt = now.toISOString()
       current = createReplayAttempt({
         id: createStableId('attempt'),
-        challengeId: urlShortenerChallenge.id,
+        challengeId: canonical.challengeId,
         startedAt,
         initial: toReplayInitial(
           canonical.nodes,
           canonical.edges,
           canonical.load,
           canonical.fault,
+          canonical.capacity,
         ),
       })
       recordingElapsedMsRef.current = 0
@@ -288,7 +377,7 @@ export function App() {
 
   useEffect(() => {
     setJudgeReport(null)
-  }, [graphTopology])
+  }, [capacity, challengeId, graphTopology])
 
   useEffect(() => {
     if (replayAttempt || !playing) return
@@ -319,13 +408,19 @@ export function App() {
   useEffect(() => {
     if (!replayFrame) return
     const replayTick = Math.floor(replayCursorMs / 900)
-    const presentation = presentReplayFrame(replayFrame, replayTick, !replayPlaying)
+    const replayScenario = replayAttempt?.challengeId === 'news-feed' ? 'news-feed' : 'url-shortener'
+    const presentation = presentReplayFrame(replayFrame, replayTick, !replayPlaying, replayScenario)
+    setChallengeId(replayScenario)
     setLoad(replayFrame.load)
     setFault(replayFrame.fault)
+    setCapacity({
+      ...DEFAULT_CAPACITY_TUNING,
+      ...(replayFrame.capacity ?? {}),
+    })
     setTick(replayTick)
     setNodes(presentation.nodes)
     setEdges(presentation.edges)
-  }, [replayCursorMs, replayFrame, replayPlaying])
+  }, [replayAttempt?.challengeId, replayCursorMs, replayFrame, replayPlaying])
 
   useEffect(() => {
     if (replayAttempt) return
@@ -390,7 +485,19 @@ export function App() {
       current.map((edge) => {
         const targetHealth = healthByNode.get(edge.target) ?? 'healthy'
         let label = edge.label
-        if (edge.id === 'clients-edge') {
+        if (challengeId === 'news-feed' && edge.id === 'feed-users-api') {
+          label = `${formatMetric(snapshot.metrics.throughput, 'throughput')} deliveries/s`
+        } else if (challengeId === 'news-feed' && edge.id === 'feed-api-store') {
+          label = `${load * 2}k posts/s`
+        } else if (challengeId === 'news-feed' && edge.id === 'feed-api-queue') {
+          label = fault === 'celebrity-spike'
+            ? '50M fan-out'
+            : `${formatMetric(snapshot.metrics.queueDepth, 'queueDepth')} queued`
+        } else if (challengeId === 'news-feed' && edge.id === 'feed-queue-workers') {
+          label = formatMetric(snapshot.metrics.p99, 'p99')
+        } else if (challengeId === 'news-feed' && edge.id === 'feed-workers-cache') {
+          label = normalizeNewsFeedTuning(capacity).strategy
+        } else if (edge.id === 'clients-edge') {
           label = `${formatMetric(snapshot.metrics.throughput, 'throughput')} req/s`
         } else if (edge.id === 'api-cache') {
           label = `${Math.round(snapshot.metrics.cacheMiss)}% miss`
@@ -403,13 +510,13 @@ export function App() {
           label,
           data: {
             tone: toneForHealth(targetHealth),
-            intensity: load,
+            intensity: challengeId === 'news-feed' && fault === 'celebrity-spike' ? 10 : load,
             paused: replayAttempt ? !replayPlaying : !playing,
           },
         }
       }),
     )
-  }, [load, nodes, playing, replayAttempt, replayPlaying, snapshot.metrics])
+  }, [capacity, challengeId, fault, load, nodes, playing, replayAttempt, replayPlaying, snapshot.metrics])
 
   const onNodesChange = useCallback(
     (changes: NodeChange<SystemFlowNode>[]) => {
@@ -537,26 +644,33 @@ export function App() {
   const changeLoad = useCallback(
     (nextLoad: 1 | 3 | 10) => {
       setLoad(nextLoad)
-      addEvent(`Load increased to ${nextLoad}×`, `${nextLoad * 10}k req/s offered`, nextLoad === 10 ? 'warning' : 'healthy')
+      const offered = challengeId === 'news-feed'
+        ? `${nextLoad * 30}k timeline reads/s offered`
+        : `${nextLoad * 10}k req/s offered`
+      addEvent(`Load changed to ${nextLoad}×`, offered, nextLoad === 10 ? 'warning' : 'healthy')
       recordAction({
         type: 'load.changed',
         source: 'user',
         payload: { load: nextLoad },
         timeline: {
           title: `Load changed to ${nextLoad}×`,
-          detail: `${nextLoad * 10}k req/s offered`,
+          detail: offered,
           tone: nextLoad === 10 ? 'warning' : 'healthy',
         },
       })
     },
-    [addEvent, recordAction],
+    [addEvent, challengeId, recordAction],
   )
 
   const changeFault = useCallback(
     (nextFault: FaultMode) => {
       setFault(nextFault)
       const tone: TimelineEvent['tone'] =
-        nextFault === 'none' ? 'healthy' : nextFault === 'cache-outage' ? 'critical' : 'warning'
+        nextFault === 'none'
+          ? 'healthy'
+          : nextFault === 'cache-outage' || nextFault === 'celebrity-spike'
+            ? 'critical'
+            : 'warning'
       addEvent(
         nextFault === 'none' ? 'Fault cleared' : FAULT_LABELS[nextFault],
         nextFault === 'none' ? 'System is recovering' : 'Fault injected into the simulation',
@@ -580,13 +694,150 @@ export function App() {
     [addEvent, recordAction],
   )
 
-  const submitDesign = useCallback(() => {
-    const report = judgeUrlShortener({
-      componentCounts,
-      criticalPathConnected,
-      nodeCount: nodes.length,
-      edgeCount: edges.length,
+  const changeCapacity = useCallback((nextCapacity: CapacityTuning) => {
+    setCapacity(nextCapacity)
+    const changedKey = (Object.keys(nextCapacity) as Array<keyof CapacityTuning>)
+      .find((key) => nextCapacity[key] !== capacity[key])
+    const detail = changedKey
+      ? `${changedKey.replace(/([A-Z])/g, ' $1').toLowerCase()} updated`
+      : 'Reference tuning restored'
+    addEvent('Capacity tuning updated', detail, 'neutral')
+    recordAction({
+      type: 'capacity.changed',
+      source: 'user',
+      payload: { capacity: { ...nextCapacity } },
+      timeline: {
+        title: 'Capacity tuning updated',
+        detail,
+        tone: 'neutral',
+      },
     })
+  }, [addEvent, capacity, recordAction])
+
+  const switchChallenge = useCallback((nextId: ScenarioId) => {
+    const pack = getChallengePack(nextId)
+    setChallengeId(nextId)
+    setNodes(clonePackNodes(pack))
+    setEdges(clonePackEdges(pack))
+    setActiveKind(pack.panel === 'fanout' ? 'queue' : 'cache')
+    setLoad(pack.defaults.load)
+    setFault(pack.defaults.fault)
+    setCapacity({ ...pack.defaults.tuning })
+    setTick(0)
+    setElapsedSeconds(0)
+    setPlaying(true)
+    setRightPanelMode('bottleneck')
+    setInterviewerOpen(true)
+    setChallengeOpen(true)
+    setHistoryOpen(false)
+    setJudgeReport(null)
+    setBottleneckPrediction(null)
+    setPredictionRationale('')
+    setPredictionLocked(false)
+    setFanoutPrediction(null)
+    setFanoutPredictionRationale('')
+    setFanoutPredictionLocked(false)
+    const initial = computeSimulation({
+      scenario: nextId,
+      loadMultiplier: pack.defaults.load,
+      fault: pack.defaults.fault,
+      tick: 0,
+      capacity: pack.defaults.tuning,
+    }).metrics
+    setTelemetry(Array.from({ length: 22 }, (_, index) => ({ tick: index - 21, ...initial })))
+    setEvents([{
+      id: `challenge-${nextId}`,
+      timestamp: '00:00',
+      title: `${pack.definition.title} loaded`,
+      detail: pack.definition.summary,
+      tone: 'neutral',
+    }])
+    draftAttemptRef.current = null
+    recordingElapsedMsRef.current = 0
+    setDraftAttempt(null)
+  }, [])
+
+  const commitPrediction = useCallback(() => {
+    if (!bottleneckPrediction || predictionRationale.trim().length < 8) return
+    setPredictionLocked(true)
+    const matches = bottleneckPrediction === capacityReport.bottleneck
+    addEvent(
+      'Bottleneck prediction committed',
+      matches ? 'Prediction matches the estimated model' : `Model points to ${capacityReport.bottleneck}`,
+      matches ? 'healthy' : 'warning',
+    )
+    recordAction({
+      type: 'answer.submitted',
+      source: 'user',
+      payload: {
+        answer: predictionRationale.trim(),
+        prompt: 'What saturates first at 100k redirects/s during a cache outage?',
+        feedback: matches
+          ? 'The prediction matches the current estimate.'
+          : `The current estimate points to ${capacityReport.bottleneck}.`,
+        focus: `prediction:${bottleneckPrediction}`,
+      },
+      timeline: {
+        title: `Predicted ${bottleneckPrediction.replace('-', ' ')}`,
+        detail: matches ? 'Prediction holds' : 'Counterfactual revealed another limit',
+        tone: matches ? 'healthy' : 'warning',
+      },
+    })
+  }, [
+    addEvent,
+    bottleneckPrediction,
+    capacityReport.bottleneck,
+    predictionRationale,
+    recordAction,
+  ])
+
+  const commitFanoutPrediction = useCallback(() => {
+    if (!fanoutPrediction || fanoutPredictionRationale.trim().length < 8) return
+    setFanoutPredictionLocked(true)
+    const matches = fanoutPrediction === baselineNewsFeedReport.bottleneck
+    addEvent(
+      'Spike prediction committed',
+      matches
+        ? 'Prediction matches the estimated fan-out model'
+        : `Model points to ${baselineNewsFeedReport.bottleneck.replace(/-/g, ' ')}`,
+      matches ? 'healthy' : 'warning',
+    )
+    recordAction({
+      type: 'answer.submitted',
+      source: 'user',
+      payload: {
+        answer: fanoutPredictionRationale.trim(),
+        prompt: 'What saturates first when one post targets 50 million followers?',
+        feedback: matches
+          ? 'The prediction matches the current estimate.'
+          : `The current estimate points to ${baselineNewsFeedReport.bottleneck}.`,
+        focus: `prediction:${fanoutPrediction}`,
+      },
+      timeline: {
+        title: `Predicted ${fanoutPrediction.replace(/-/g, ' ')}`,
+        detail: matches ? 'Prediction holds' : 'Counterfactual revealed another limit',
+        tone: matches ? 'healthy' : 'warning',
+      },
+    })
+  }, [
+    addEvent,
+    baselineNewsFeedReport.bottleneck,
+    fanoutPrediction,
+    fanoutPredictionRationale,
+    recordAction,
+  ])
+
+  const submitDesign = useCallback(() => {
+    const judge = challengeId === 'news-feed' ? judgeNewsFeed : judgeUrlShortener
+    const report = judge(
+      {
+        componentCounts,
+        criticalPathConnected,
+        nodeCount: nodes.length,
+        edgeCount: edges.length,
+      },
+      { simulate: (input) => computeSimulation({ ...input, scenario: challengeId, capacity }) },
+    )
     setJudgeReport(report)
     addEvent(
       'Design submitted',
@@ -616,7 +867,9 @@ export function App() {
     const initialFailure = recorded.initial.fault === 'none' ? null : {
       title: recorded.initial.fault === 'cache-outage'
         ? 'Attempt started with Redis unavailable'
-        : `Attempt started with ${FAULT_LABELS[recorded.initial.fault].toLowerCase()}`,
+        : recorded.initial.fault === 'celebrity-spike'
+          ? 'Attempt started with a 50M-follower spike'
+          : `Attempt started with ${FAULT_LABELS[recorded.initial.fault].toLowerCase()}`,
       detail: 'This failure was already active in the initial state.',
       tone: 'critical' as const,
       atMs: 0,
@@ -651,6 +904,8 @@ export function App() {
     setDraftAttempt(null)
   }, [
     addEvent,
+    capacity,
+    challengeId,
     componentCounts,
     criticalPathConnected,
     edges.length,
@@ -667,9 +922,10 @@ export function App() {
       : JSON.stringify(
       {
         version: 1,
-        challenge: urlShortenerChallenge.id,
+        challenge: challengeId,
         load,
         fault,
+        capacity,
         nodes: nodes.map((node) => ({
           id: node.id,
           kind: node.data.kind,
@@ -695,7 +951,7 @@ export function App() {
     } catch {
       addEvent('Share unavailable', 'Clipboard access was not granted', 'warning')
     }
-  }, [addEvent, edges, fault, load, nodes, replayAttempt])
+  }, [addEvent, capacity, challengeId, edges, fault, load, nodes, replayAttempt])
 
   const openHistory = useCallback(() => {
     setChallengeOpen(false)
@@ -713,6 +969,8 @@ export function App() {
         edges: canonicalStateRef.current.edges,
         load: canonicalStateRef.current.load,
         fault: canonicalStateRef.current.fault,
+        capacity: canonicalStateRef.current.capacity,
+        challengeId: canonicalStateRef.current.challengeId,
         playing,
       }
     }
@@ -720,6 +978,7 @@ export function App() {
     setHistoryOpen(false)
     setInterviewerOpen(false)
     setReplayAttempt(attempt)
+    setChallengeId(attempt.challengeId === 'news-feed' ? 'news-feed' : 'url-shortener')
     setReplayCursorMs(0)
     setReplayPlaying(false)
     setReplaySpeed(1)
@@ -736,6 +995,8 @@ export function App() {
       setEdges(live.edges)
       setLoad(live.load)
       setFault(live.fault)
+      setCapacity(live.capacity)
+      setChallengeId(live.challengeId)
       setPlaying(live.playing)
     }
     liveStateBeforeReplayRef.current = null
@@ -761,7 +1022,7 @@ export function App() {
         addEvent('Replay import failed', result.error.message, 'critical')
         return
       }
-      replayRepository.save(verifyImportedUrlShortenerAttempt(result.value.attempt))
+      replayRepository.save(verifyImportedAttempt(result.value.attempt))
       setSavedAttempts(replayRepository.list())
       setHistoryOpen(true)
       setHistoryNotice({
@@ -804,7 +1065,7 @@ export function App() {
 
   const interviewContext = useMemo<InterviewContext>(
     () => ({
-      scenario: 'url-shortener',
+      scenario: challengeId,
       loadMultiplier: load,
       fault,
       metrics: snapshot.metrics,
@@ -812,7 +1073,7 @@ export function App() {
       edgeCount: edges.length,
       recentEvents: events.slice(0, 5),
     }),
-    [edges.length, events, fault, load, nodes, snapshot.metrics],
+    [challengeId, edges.length, events, fault, load, nodes, snapshot.metrics],
   )
 
   useEffect(() => {
@@ -826,7 +1087,7 @@ export function App() {
     return () => {
       cancelled = true
     }
-  }, [fault, load, criticalPathConnected, replayAttempt])
+  }, [challengeId, fault, load, criticalPathConnected, replayAttempt])
 
   const runInterviewAction = useCallback(
     async (action: InterviewAction) => {
@@ -865,18 +1126,52 @@ export function App() {
     [addEvent, answer, interviewContext, prompt, recordAction],
   )
 
+  const defendCapacity = useCallback(() => {
+    if (challengeId === 'news-feed') {
+      const tuning = normalizeNewsFeedTuning(capacity)
+      setPrompt(
+        `You chose ${tuning.strategy} fan-out, ${tuning.workers} workers, batches of ${tuning.batchSize}, ` +
+        `and ${tuning.deduplication ? 'idempotent delivery' : 'no deduplication'}. Defend the ${Math.round(newsFeedReport.cost.total)} USD/month trade-off.`,
+      )
+      setFeedback('Explain when you would move an account between write and read fan-out, and which queue-lag alarm changes that decision.')
+      setRightPanelMode('interview')
+      setInterviewerOpen(true)
+      addEvent('Design ready to defend', 'Interviewer is challenging freshness, cost, and delivery semantics', 'neutral')
+      return
+    }
+    setPrompt(
+      `You chose ${capacity.indexedLookup ? 'an indexed lookup' : 'a scan-prone lookup'}, ` +
+      `${capacity.readReplicas} read replica${capacity.readReplicas === 1 ? '' : 's'}, and a ` +
+      `${capacity.databaseProfile} database. Defend the ${Math.round(capacityReport.cost.total)} USD/month trade-off.`,
+    )
+    setFeedback('Explain which assumption you would benchmark first and what would make you reverse this decision.')
+    setRightPanelMode('interview')
+    setInterviewerOpen(true)
+    addEvent('Design ready to defend', 'Interviewer is challenging the cost and bottleneck assumptions', 'neutral')
+  }, [addEvent, capacity, capacityReport.cost.total, challengeId, newsFeedReport.cost.total])
+
   return (
     <div
       className={`app-shell ${interviewerOpen ? 'interviewer-open' : 'interviewer-closed'} ${
         (replayAttempt ? replayPlaying : playing) ? 'simulation-running' : 'simulation-paused'
-      } ${replayAttempt ? 'replay-mode' : ''}`}
+      } ${replayAttempt ? 'replay-mode' : ''} ${rightPanelMode === 'bottleneck' ? 'bottleneck-mode' : ''}`}
     >
       <TopBar
+        challengeId={challengeId}
+        challengeTitle={activePack.definition.title.replace(/^Design a /, '')}
+        challengeOptions={challengeOptions}
+        onChallengeChange={switchChallenge}
         elapsedSeconds={replayAttempt ? Math.floor(replayCursorMs / 1000) : elapsedSeconds}
         playing={replayAttempt ? replayPlaying : playing}
         onTogglePlaying={() => setPlaying((value) => !value)}
         interviewerOpen={interviewerOpen && !historyOpen && !replayAttempt}
         onToggleInterviewer={() => setInterviewerOpen((value) => !value)}
+        onOpenCapacity={() => {
+          setRightPanelMode('bottleneck')
+          setInterviewerOpen(true)
+        }}
+        defenseLabel={activePack.panel === 'fanout' ? 'Celebrity Defense' : 'Bottleneck Defense'}
+        capacityActive={rightPanelMode === 'bottleneck' && interviewerOpen}
         onOpenChallenge={() => {
           if (!replayAttempt) setChallengeOpen(true)
         }}
@@ -895,16 +1190,25 @@ export function App() {
           load={load}
           fault={fault}
           telemetry={telemetry}
+          faults={activePack.faults}
+          telemetryLabels={activePack.telemetryLabels}
+          canvasLabel={activePack.canvasLabel}
           onNodesChange={onNodesChange}
           onNodeDragStop={onNodeDragStop}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
           onAddNode={addNode}
-          onNodeKindSelected={setActiveKind}
+          onNodeKindSelected={(kind) => {
+            setActiveKind(kind)
+            if (kind === 'database' || kind === 'cache') {
+              setRightPanelMode('bottleneck')
+              setInterviewerOpen(true)
+            }
+          }}
           onLoadChange={changeLoad}
           onFaultChange={changeFault}
           readOnly={Boolean(replayAttempt)}
-          fitViewKey={replayAttempt?.id ?? 'live'}
+          fitViewKey={replayAttempt?.id ?? `${challengeId}-live`}
           bottomOverlay={replayAttempt ? (
             <ReplayTimeline
               cursorMs={replayCursorMs}
@@ -919,6 +1223,12 @@ export function App() {
                 errors: `${snapshot.metrics.errorRate.toFixed(1)}%`,
                 dbCpu: `${Math.round(snapshot.metrics.dbCpu)}%`,
               }}
+              metricLabels={{
+                throughput: activePack.telemetryLabels.throughput,
+                p99: activePack.telemetryLabels.p99,
+                errors: activePack.telemetryLabels.errorRate,
+                dbCpu: activePack.telemetryLabels.dbCpu,
+              }}
               onCursorChange={seekReplay}
               onTogglePlaying={toggleReplay}
               onPreviousEvent={() => seekReplayEvent(-1)}
@@ -927,7 +1237,7 @@ export function App() {
             />
           ) : undefined}
         />
-        {!historyOpen && !replayAttempt && <InterviewerPanel
+        {!historyOpen && !replayAttempt && rightPanelMode === 'interview' && <InterviewerPanel
           open={interviewerOpen}
           providerLabel="Local preview"
           prompt={prompt}
@@ -940,8 +1250,51 @@ export function App() {
           onHint={() => void runInterviewAction('hint')}
           onReview={() => void runInterviewAction('review')}
           onContinue={() => void runInterviewAction('continue')}
+          onOpenCapacity={() => setRightPanelMode('bottleneck')}
           onClose={() => setInterviewerOpen((value) => !value)}
         />}
+        {!historyOpen && !replayAttempt && rightPanelMode === 'bottleneck' && activePack.panel === 'capacity' && (
+          <BottleneckPanel
+            open={interviewerOpen}
+            tuning={capacity}
+            report={capacityReport}
+            baseline={baselineCapacityReport}
+            prediction={bottleneckPrediction}
+            rationale={predictionRationale}
+            predictionLocked={predictionLocked}
+            onPredictionChange={setBottleneckPrediction}
+            onRationaleChange={setPredictionRationale}
+            onCommitPrediction={commitPrediction}
+            onTuningChange={changeCapacity}
+            onDefend={defendCapacity}
+            onReset={() => changeCapacity({
+              ...DEFAULT_CAPACITY_TUNING,
+              pricingPackId: capacity.pricingPackId,
+              benchmarkPackId: capacity.benchmarkPackId,
+            })}
+            onOpenInterviewer={() => setRightPanelMode('interview')}
+            onClose={() => setInterviewerOpen((value) => !value)}
+          />
+        )}
+        {!historyOpen && !replayAttempt && rightPanelMode === 'bottleneck' && activePack.panel === 'fanout' && (
+          <FanoutPanel
+            open={interviewerOpen}
+            tuning={capacity}
+            report={newsFeedReport}
+            baseline={baselineNewsFeedReport}
+            prediction={fanoutPrediction}
+            rationale={fanoutPredictionRationale}
+            predictionLocked={fanoutPredictionLocked}
+            onPredictionChange={setFanoutPrediction}
+            onRationaleChange={setFanoutPredictionRationale}
+            onCommitPrediction={commitFanoutPrediction}
+            onTuningChange={changeCapacity}
+            onDefend={defendCapacity}
+            onReset={() => changeCapacity({ ...DEFAULT_NEWS_FEED_TUNING })}
+            onOpenInterviewer={() => setRightPanelMode('interview')}
+            onClose={() => setInterviewerOpen((value) => !value)}
+          />
+        )}
         {historyOpen && (
           <HistoryPanel
             open
@@ -974,7 +1327,7 @@ export function App() {
         )}
       </div>
       <ChallengePanel
-        challenge={urlShortenerChallenge}
+        challenge={activePack.definition}
         open={challengeOpen && !replayAttempt}
         onClose={() => setChallengeOpen(false)}
         onRunCase={(nextLoad, nextFault) => {

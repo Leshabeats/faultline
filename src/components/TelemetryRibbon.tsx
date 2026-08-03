@@ -3,6 +3,7 @@ import { formatMetric } from '../simulation/engine'
 
 interface TelemetryRibbonProps {
   history: TelemetryPoint[]
+  labels?: Partial<Record<MetricKey, string>>
 }
 
 type MetricKey = 'throughput' | 'p99' | 'errorRate' | 'dbCpu'
@@ -34,7 +35,7 @@ function Sparkline({ values, tone }: { values: number[]; tone: string }) {
   )
 }
 
-export function TelemetryRibbon({ history }: TelemetryRibbonProps) {
+export function TelemetryRibbon({ history, labels = {} }: TelemetryRibbonProps) {
   const latest = history[history.length - 1]
   if (!latest) return null
 
@@ -43,7 +44,7 @@ export function TelemetryRibbon({ history }: TelemetryRibbonProps) {
       {metrics.map(({ key, label, tone }) => (
         <div className={`telemetry-metric tone-${tone}`} key={key}>
           <span className="metric-label">
-            <i aria-hidden="true" /> {label}
+            <i aria-hidden="true" /> {labels[key] ?? label}
           </span>
           <strong>{formatMetric(latest[key], key)}</strong>
           <Sparkline values={history.map((point) => point[key])} tone={tone} />

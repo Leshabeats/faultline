@@ -31,6 +31,7 @@ export const cloneInitialReplayState = (
   architecture: cloneArchitecture(initial.architecture),
   load: initial.load,
   fault: initial.fault,
+  ...(initial.capacity ? { capacity: { ...initial.capacity } } : {}),
 })
 
 export const compareReplayEvents = (left: ReplayEventV1, right: ReplayEventV1) =>
@@ -74,6 +75,9 @@ export function reduceReplayEvent(
       break
     case 'fault.changed':
       state.fault = event.payload.fault
+      break
+    case 'capacity.changed':
+      state.capacity = { ...event.payload.capacity }
       break
     case 'node.added':
       state.architecture.nodes = replaceById(

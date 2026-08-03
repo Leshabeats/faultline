@@ -1,0 +1,80 @@
+{
+  "schema": "faultline.benchmark-pack",
+  "version": 1,
+  "id": "local-m1-pro-2026.08",
+  "label": "Local M1 Pro · measured",
+  "measuredAt": "2026-08-03T14:44:00.000Z",
+  "environment": {
+    "hardware": "MacBookPro18,3 · Apple M1 Pro · 8 cores · 16 GB",
+    "os": "Darwin 25.5.0 arm64",
+    "virtualization": "Docker Desktop 29.2.1 for PostgreSQL; Redis ran on the host"
+  },
+  "capacities": {
+    "serviceRpsPerNode": {
+      "value": 38000,
+      "authority": "estimated",
+      "basis": "Retained from the transparent reference model; no HTTP service benchmark was run."
+    },
+    "cacheRpsPerNode": {
+      "value": 39984.01,
+      "authority": "measured",
+      "basis": "Lower of the measured Redis GET and SET throughput."
+    },
+    "databaseReadRps": {
+      "compact": {
+        "value": 9459.997947,
+        "authority": "measured",
+        "basis": "pgbench select-only throughput on the recorded environment."
+      },
+      "balanced": {
+        "value": 18919.995894,
+        "authority": "derived",
+        "basis": "2x compact baseline for interview counterfactuals; not a measured cloud SKU."
+      },
+      "performance": {
+        "value": 37839.991788,
+        "authority": "derived",
+        "basis": "4x compact baseline for interview counterfactuals; not a measured cloud SKU."
+      }
+    }
+  },
+  "measurements": [
+    {
+      "component": "database",
+      "tool": "pgbench",
+      "toolVersion": "18.3",
+      "target": "PostgreSQL 16.14 in postgres:16-bookworm@sha256:92620daddcd947f8d5ab5ba66e848702fe443d87fed30c4cea8e389fd78dfc55",
+      "command": "pgbench -S -c 16 -j 4 -T 15 -P 5 -h 127.0.0.1 -p 55441 -U postgres postgres",
+      "result": {
+        "throughputRps": 9459.997947,
+        "latencyAverageMs": 1.687,
+        "failedPercent": 0
+      }
+    },
+    {
+      "component": "database-write",
+      "tool": "pgbench",
+      "toolVersion": "18.3",
+      "target": "PostgreSQL 16.14 in postgres:16-bookworm@sha256:92620daddcd947f8d5ab5ba66e848702fe443d87fed30c4cea8e389fd78dfc55",
+      "command": "pgbench -c 16 -j 4 -T 15 -P 5 -h 127.0.0.1 -p 55441 -U postgres postgres",
+      "result": {
+        "throughputRps": 1099.327996,
+        "latencyAverageMs": 14.528,
+        "failedPercent": 0
+      }
+    },
+    {
+      "component": "cache",
+      "tool": "redis-benchmark",
+      "toolVersion": "7.2.5",
+      "target": "Redis 7.2.5 on 127.0.0.1",
+      "command": "redis-benchmark -h 127.0.0.1 -p 6388 -t set,get -r 100000 -n 100000 -c 50 --threads 2 --csv",
+      "result": {
+        "throughputRps": 39984.01,
+        "latencyAverageMs": 1.1,
+        "latencyP99Ms": 2.927,
+        "failedPercent": 0
+      }
+    }
+  ]
+}

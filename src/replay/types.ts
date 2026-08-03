@@ -1,4 +1,9 @@
-import type { ComponentKind, FaultMode, SimulationInput } from '../domain/system'
+import type {
+  CapacityTuning,
+  ComponentKind,
+  FaultMode,
+  SimulationInput,
+} from '../domain/system'
 
 export const REPLAY_SCHEMA = 'faultline.replay' as const
 export const REPLAY_SCHEMA_VERSION = 1 as const
@@ -43,6 +48,7 @@ export interface ReplayInitialStateV1 {
   architecture: ReplayArchitectureV1
   load: ReplayLoadMultiplier
   fault: FaultMode
+  capacity?: CapacityTuning
 }
 
 export interface ReplaySubmissionSummaryV1 {
@@ -96,6 +102,11 @@ export interface ReplayLoadChangedEventV1 extends ReplayEventBaseV1 {
 export interface ReplayFaultChangedEventV1 extends ReplayEventBaseV1 {
   type: 'fault.changed'
   payload: { fault: FaultMode; targetNodeId?: string }
+}
+
+export interface ReplayCapacityChangedEventV1 extends ReplayEventBaseV1 {
+  type: 'capacity.changed'
+  payload: { capacity: CapacityTuning }
 }
 
 export interface ReplayNodeAddedEventV1 extends ReplayEventBaseV1 {
@@ -166,6 +177,7 @@ export interface ReplayDesignSubmittedEventV1 extends ReplayEventBaseV1 {
 export type ReplayEventV1 =
   | ReplayLoadChangedEventV1
   | ReplayFaultChangedEventV1
+  | ReplayCapacityChangedEventV1
   | ReplayNodeAddedEventV1
   | ReplayNodeUpdatedEventV1
   | ReplayNodeRemovedEventV1

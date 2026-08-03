@@ -36,6 +36,49 @@ describe('replay serialization', () => {
     expect(parsed.value.exportedAt).toBe(attempt.updatedAt)
   })
 
+  it('round-trips capacity tuning used by deterministic playback', () => {
+    const attempt = createCompletedTestAttempt()
+    attempt.initial.capacity = {
+      cacheHitRate: 0.95,
+      indexedLookup: true,
+      poolSize: 300,
+      readReplicas: 1,
+      databaseProfile: 'balanced',
+      pricingPackId: 'aws-us-east-1-2026.07',
+      benchmarkPackId: 'local-m1-pro-2026.08',
+    }
+    const parsed = parseReplayEnvelope(serializeReplayEnvelope(attempt))
+
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+    expect(parsed.value.attempt.initial.capacity).toEqual(attempt.initial.capacity)
+  })
+
+  it('round-trips the optional news-feed tuning without changing the v1 envelope', () => {
+    const attempt = createCompletedTestAttempt()
+    attempt.challengeId = 'news-feed'
+    attempt.initial.fault = 'celebrity-spike'
+    attempt.initial.capacity = {
+      cacheHitRate: 0.9,
+      indexedLookup: false,
+      poolSize: 100,
+      readReplicas: 0,
+      databaseProfile: 'balanced',
+      fanoutStrategy: 'hybrid',
+      fanoutWorkers: 64,
+      fanoutBatchSize: 2000,
+      celebrityThreshold: 1_000_000,
+      deduplication: true,
+    }
+    const parsed = parseReplayEnvelope(serializeReplayEnvelope(attempt))
+
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+    expect(parsed.value.version).toBe(1)
+    expect(parsed.value.attempt.challengeId).toBe('news-feed')
+    expect(parsed.value.attempt.initial.capacity).toEqual(attempt.initial.capacity)
+  })
+
   it('can redact interview content for a public share without mutating local history', () => {
     const envelope = createReplayEnvelope(createCompletedTestAttempt())
     const serialized = serializeReplayEnvelope(envelope, { redactAnswers: true })
@@ -58,6 +101,13 @@ describe('replay serialization', () => {
         challenge: 'url-shortener',
         load: 10,
         fault: 'cache-outage',
+        capacity: {
+          cacheHitRate: 0.99,
+          indexedLookup: true,
+          poolSize: 600,
+          readReplicas: 2,
+          databaseProfile: 'performance',
+        },
         nodes: [
           {
             id: 'client',
@@ -77,6 +127,7 @@ describe('replay serialization', () => {
     expect(result.value.attempt.initial).toMatchObject({
       load: 10,
       fault: 'cache-outage',
+      capacity: { indexedLookup: true, readReplicas: 2 },
       architecture: { nodes: [{ data: { kind: 'client', label: 'Clients' } }] },
     })
   })

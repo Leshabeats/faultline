@@ -1,4 +1,5 @@
 export { judgeUrlShortener } from './urlShortenerJudge'
+export { judgeNewsFeed } from './newsFeedJudge'
 export type {
   HiddenCaseResult,
   JudgeCaseResult,

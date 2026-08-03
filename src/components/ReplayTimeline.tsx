@@ -21,6 +21,12 @@ interface ReplayTimelineProps {
     errors: string
     dbCpu: string
   }
+  metricLabels?: {
+    throughput: string
+    p99: string
+    errors: string
+    dbCpu: string
+  }
   onCursorChange: (cursorMs: number) => void
   onTogglePlaying: () => void
   onPreviousEvent: () => void
@@ -43,6 +49,12 @@ export function ReplayTimeline({
   events,
   activeEvent,
   metrics,
+  metricLabels = {
+    throughput: 'Throughput',
+    p99: 'p99',
+    errors: 'Errors',
+    dbCpu: 'DB CPU',
+  },
   onCursorChange,
   onTogglePlaying,
   onPreviousEvent,
@@ -62,10 +74,10 @@ export function ReplayTimeline({
           </span>
         </div>
         <dl className="replay-metrics">
-          <div><dt>Throughput</dt><dd>{metrics.throughput}</dd></div>
-          <div><dt>p99</dt><dd>{metrics.p99}</dd></div>
-          <div><dt>Errors</dt><dd>{metrics.errors}</dd></div>
-          <div><dt>DB CPU</dt><dd>{metrics.dbCpu}</dd></div>
+          <div><dt>{metricLabels.throughput}</dt><dd>{metrics.throughput}</dd></div>
+          <div><dt>{metricLabels.p99}</dt><dd>{metrics.p99}</dd></div>
+          <div><dt>{metricLabels.errors}</dt><dd>{metrics.errors}</dd></div>
+          <div><dt>{metricLabels.dbCpu}</dt><dd>{metrics.dbCpu}</dd></div>
         </dl>
       </div>
 

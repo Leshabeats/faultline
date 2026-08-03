@@ -1,12 +1,21 @@
-import { ChevronDown, History, LogOut, PanelRightClose, Pause, Play, Share2 } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Check, ChevronDown, Gauge, History, LogOut, PanelRightClose, Pause, Play, Share2 } from 'lucide-react'
+import type { ScenarioId } from '../domain/system'
 import { FaultlineMark } from './FaultlineMark'
 
 interface TopBarProps {
+  challengeId: ScenarioId
+  challengeTitle: string
+  challengeOptions: Array<{ id: ScenarioId; title: string; difficulty: string }>
+  onChallengeChange: (id: ScenarioId) => void
   elapsedSeconds: number
   playing: boolean
   onTogglePlaying: () => void
   interviewerOpen: boolean
   onToggleInterviewer: () => void
+  onOpenCapacity: () => void
+  defenseLabel?: string
+  capacityActive?: boolean
   onOpenChallenge: () => void
   onOpenHistory: () => void
   onShare: () => void
@@ -23,11 +32,18 @@ const formatTime = (value: number) => {
 }
 
 export function TopBar({
+  challengeId,
+  challengeTitle,
+  challengeOptions,
+  onChallengeChange,
   elapsedSeconds,
   playing,
   onTogglePlaying,
   interviewerOpen,
   onToggleInterviewer,
+  onOpenCapacity,
+  defenseLabel = 'Bottleneck Defense',
+  capacityActive = false,
   onOpenChallenge,
   onOpenHistory,
   onShare,
@@ -36,12 +52,64 @@ export function TopBar({
   replayDurationSeconds = 0,
   onExitReplay,
 }: TopBarProps) {
+  const [challengeMenuOpen, setChallengeMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!challengeMenuOpen) return
+    const close = (event: MouseEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) setChallengeMenuOpen(false)
+    }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [challengeMenuOpen])
+
   return (
     <header className="topbar">
       <FaultlineMark />
-      <button className="document-title" type="button" onClick={onOpenChallenge}>
-        URL Shortener <ChevronDown size={16} />
-      </button>
+      <div className="document-menu" ref={menuRef}>
+        <button
+          className="document-title"
+          type="button"
+          onClick={() => setChallengeMenuOpen((open) => !open)}
+          aria-expanded={challengeMenuOpen}
+          aria-haspopup="menu"
+          disabled={replayMode}
+        >
+          {challengeTitle} <ChevronDown size={16} />
+        </button>
+        {challengeMenuOpen && !replayMode && (
+          <div className="challenge-menu" role="menu" aria-label="Choose a challenge">
+            <span>Challenge pack</span>
+            {challengeOptions.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                role="menuitem"
+                className={option.id === challengeId ? 'is-selected' : ''}
+                onClick={() => {
+                  setChallengeMenuOpen(false)
+                  if (option.id === challengeId) onOpenChallenge()
+                  else onChallengeChange(option.id)
+                }}
+              >
+                <span><strong>{option.title}</strong><small>{option.difficulty}</small></span>
+                {option.id === challengeId && <Check size={16} />}
+              </button>
+            ))}
+            <button
+              type="button"
+              className="challenge-brief-action"
+              onClick={() => {
+                setChallengeMenuOpen(false)
+                onOpenChallenge()
+              }}
+            >
+              View current brief
+            </button>
+          </div>
+        )}
+      </div>
       <span className="interview-timer" aria-label="Interview timer">
         {replayMode && <span className="replay-mode-label">Replay</span>}
         {recording && !replayMode && <span className="recording-mode-label"><i aria-hidden="true" /> Recording</span>}
@@ -71,6 +139,15 @@ export function TopBar({
         >
           <Share2 size={19} />
         </button>
+        {!replayMode && <button
+          type="button"
+          aria-label={`Open ${defenseLabel.toLowerCase()}`}
+          title={defenseLabel}
+          className={`icon-button desktop-only ${capacityActive ? 'is-active' : ''}`}
+          onClick={onOpenCapacity}
+        >
+          <Gauge size={19} />
+        </button>}
         {!replayMode && <button
           type="button"
           aria-label={interviewerOpen ? 'Hide interviewer' : 'Show interviewer'}
