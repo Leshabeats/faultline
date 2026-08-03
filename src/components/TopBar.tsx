@@ -1,4 +1,4 @@
-import { ChevronDown, PanelRightClose, Pause, Play, Share2 } from 'lucide-react'
+import { ChevronDown, History, LogOut, PanelRightClose, Pause, Play, Share2 } from 'lucide-react'
 import { FaultlineMark } from './FaultlineMark'
 
 interface TopBarProps {
@@ -8,7 +8,12 @@ interface TopBarProps {
   interviewerOpen: boolean
   onToggleInterviewer: () => void
   onOpenChallenge: () => void
+  onOpenHistory: () => void
   onShare: () => void
+  replayMode?: boolean
+  recording?: boolean
+  replayDurationSeconds?: number
+  onExitReplay?: () => void
 }
 
 const formatTime = (value: number) => {
@@ -24,7 +29,12 @@ export function TopBar({
   interviewerOpen,
   onToggleInterviewer,
   onOpenChallenge,
+  onOpenHistory,
   onShare,
+  replayMode = false,
+  recording = false,
+  replayDurationSeconds = 0,
+  onExitReplay,
 }: TopBarProps) {
   return (
     <header className="topbar">
@@ -33,13 +43,25 @@ export function TopBar({
         URL Shortener <ChevronDown size={16} />
       </button>
       <span className="interview-timer" aria-label="Interview timer">
+        {replayMode && <span className="replay-mode-label">Replay</span>}
+        {recording && !replayMode && <span className="recording-mode-label"><i aria-hidden="true" /> Recording</span>}
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <circle cx="12" cy="12" r="9" />
           <path d="M12 7v5l3 2" />
         </svg>
         {formatTime(elapsedSeconds)}
+        {replayMode && <span className="replay-duration">/ {formatTime(replayDurationSeconds)}</span>}
       </span>
       <div className="topbar-actions">
+        <button
+          type="button"
+          aria-label="Open attempt history"
+          title="Attempt history"
+          className="icon-button history-button"
+          onClick={onOpenHistory}
+        >
+          <History size={19} />
+        </button>
         <button
           type="button"
           aria-label="Share scenario"
@@ -49,18 +71,23 @@ export function TopBar({
         >
           <Share2 size={19} />
         </button>
-        <button
+        {!replayMode && <button
           type="button"
           aria-label={interviewerOpen ? 'Hide interviewer' : 'Show interviewer'}
           className="icon-button desktop-only"
           onClick={onToggleInterviewer}
         >
           <PanelRightClose size={20} />
-        </button>
-        <button className="pause-button" type="button" onClick={onTogglePlaying}>
+        </button>}
+        {replayMode ? (
+          <button className="pause-button replay-exit-button" type="button" aria-label="Exit replay" onClick={onExitReplay}>
+            <LogOut size={17} />
+            <span>Done</span>
+          </button>
+        ) : <button className="pause-button" type="button" aria-label={playing ? 'Pause simulation' : 'Run simulation'} onClick={onTogglePlaying}>
           {playing ? <Pause size={17} fill="currentColor" /> : <Play size={17} fill="currentColor" />}
           <span>{playing ? 'Pause' : 'Run'}</span>
-        </button>
+        </button>}
       </div>
     </header>
   )

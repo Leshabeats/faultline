@@ -7,6 +7,7 @@ import {
   type Connection,
   type EdgeChange,
   type NodeChange,
+  type ReactFlowInstance,
 } from '@xyflow/react'
 import type { ComponentKind, TelemetryPoint } from '../domain/system'
 import { ComponentDock } from '../components/ComponentDock'
@@ -16,6 +17,7 @@ import { SystemNode } from './SystemNode'
 import { TrafficEdge } from './TrafficEdge'
 import type { SystemFlowEdge, SystemFlowNode } from './types'
 import type { FaultMode } from '../domain/system'
+import { useEffect, useRef, type ReactNode } from 'react'
 
 const nodeTypes = { system: SystemNode }
 const edgeTypes = { traffic: TrafficEdge }
@@ -30,10 +32,14 @@ interface ArchitectureCanvasProps {
   onNodesChange: (changes: NodeChange<SystemFlowNode>[]) => void
   onEdgesChange: (changes: EdgeChange<SystemFlowEdge>[]) => void
   onConnect: (connection: Connection) => void
+  onNodeDragStop?: (node: SystemFlowNode) => void
   onAddNode: (kind: ComponentKind) => void
   onNodeKindSelected: (kind: ComponentKind) => void
   onLoadChange: (load: 1 | 3 | 10) => void
   onFaultChange: (fault: FaultMode) => void
+  readOnly?: boolean
+  bottomOverlay?: ReactNode
+  fitViewKey?: string
 }
 
 export function ArchitectureCanvas({
@@ -46,14 +52,29 @@ export function ArchitectureCanvas({
   onNodesChange,
   onEdgesChange,
   onConnect,
+  onNodeDragStop,
   onAddNode,
   onNodeKindSelected,
   onLoadChange,
   onFaultChange,
+  readOnly = false,
+  bottomOverlay,
+  fitViewKey,
 }: ArchitectureCanvasProps) {
+  const flowRef = useRef<ReactFlowInstance<SystemFlowNode, SystemFlowEdge> | null>(null)
+
+  useEffect(() => {
+    if (!fitViewKey) return
+    const frame = window.requestAnimationFrame(() => {
+      void flowRef.current?.fitView({ padding: 0.18, maxZoom: 1, duration: 260 })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [fitViewKey])
+
   return (
     <main className="canvas-region" aria-label="System architecture canvas">
       <ReactFlow<SystemFlowNode, SystemFlowEdge>
+        key={fitViewKey}
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
@@ -61,21 +82,26 @@ export function ArchitectureCanvas({
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
-        onNodeClick={(_, node) => onNodeKindSelected(node.data.kind)}
+        onNodeDragStop={readOnly || !onNodeDragStop ? undefined : (_, node) => onNodeDragStop(node)}
+        onNodeClick={readOnly ? undefined : (_, node) => onNodeKindSelected(node.data.kind)}
         defaultEdgeOptions={{
           type: 'traffic',
           markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14 },
         }}
         fitView
+        onInit={(instance) => { flowRef.current = instance }}
         fitViewOptions={{ padding: 0.18, maxZoom: 1 }}
         minZoom={0.38}
         maxZoom={1.8}
         panOnScroll
-        selectionOnDrag
-        nodesFocusable
-        edgesFocusable
-        deleteKeyCode={['Backspace', 'Delete']}
-        aria-label="Editable URL shortener architecture"
+        selectionOnDrag={!readOnly}
+        nodesDraggable={!readOnly}
+        nodesConnectable={!readOnly}
+        elementsSelectable={!readOnly}
+        nodesFocusable={!readOnly}
+        edgesFocusable={!readOnly}
+        deleteKeyCode={readOnly ? null : ['Backspace', 'Delete']}
+        aria-label={readOnly ? 'Read-only URL shortener architecture replay' : 'Editable URL shortener architecture'}
       >
         <Background
           variant={BackgroundVariant.Dots}
@@ -89,15 +115,16 @@ export function ArchitectureCanvas({
           position="bottom-right"
         />
       </ReactFlow>
-      <ComponentDock activeKind={activeKind} onAdd={onAddNode} />
-      <TelemetryRibbon history={telemetry} />
-      <SimulationControls
-        load={load}
-        fault={fault}
-        onLoadChange={onLoadChange}
-        onFaultChange={onFaultChange}
-        onQuickAdd={onAddNode}
-      />
+      {!readOnly && <ComponentDock activeKind={activeKind} onAdd={onAddNode} />}
+      {!readOnly && <TelemetryRibbon history={telemetry} />}
+      {!readOnly && <SimulationControls
+          load={load}
+          fault={fault}
+          onLoadChange={onLoadChange}
+          onFaultChange={onFaultChange}
+          onQuickAdd={onAddNode}
+        />}
+      {bottomOverlay}
     </main>
   )
 }

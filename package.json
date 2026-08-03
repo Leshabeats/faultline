@@ -1,8 +1,8 @@
 {
   "name": "faultline",
   "private": true,
-  "version": "0.1.0",
-  "description": "Animated system-design interview practice with deterministic failures, hidden cases, and an AI interviewer.",
+  "version": "0.2.0",
+  "description": "Animated system-design interview practice with deterministic failures, hidden cases, and replayable attempts.",
   "license": "MIT",
   "homepage": "https://leshabeats.github.io/faultline/",
   "repository": {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   addEdge,
   applyEdgeChanges,
@@ -12,6 +12,9 @@ import { seedEdges, seedNodes } from './canvas/seed'
 import type { SystemFlowEdge, SystemFlowNode } from './canvas/types'
 import { InterviewerPanel } from './components/InterviewerPanel'
 import { ChallengePanel } from './components/ChallengePanel'
+import { HistoryPanel, type HistoryAttemptItem } from './components/HistoryPanel'
+import { ReplayPanel } from './components/ReplayPanel'
+import { ReplayTimeline } from './components/ReplayTimeline'
 import { TopBar } from './components/TopBar'
 import { urlShortenerChallenge } from './challenges/urlShortener'
 import {
@@ -28,6 +31,27 @@ import type { InterviewAction, InterviewContext } from './interview/types'
 import { judgeUrlShortener, type JudgeReport } from './judge'
 import { computeSimulation, formatMetric } from './simulation/engine'
 import { analyzeTopology } from './simulation/topology'
+import {
+  ReplayAttemptRepository,
+  createReplayAttempt,
+  parseReplayEnvelope,
+  playReplayAt,
+  recordReplayEvent,
+  serializeReplayEnvelope,
+  type ReplayAttemptV1,
+  type ReplayEventDraftV1,
+} from './replay'
+import {
+  createStableId,
+  downloadReplay,
+  presentReplayFrame,
+  replayKeyMoment,
+  replayTimelineEvents,
+  toReplayEdge,
+  toReplayInitial,
+  toReplayNode,
+} from './replay/presentation'
+import { verifyImportedUrlShortenerAttempt } from './replay/verification'
 
 const toneForHealth = (health: ComponentHealth) => {
   if (health === 'failed' || health === 'hot') return 'critical' as const
@@ -67,6 +91,25 @@ const initialEvents: TimelineEvent[] = [
   },
 ]
 
+type ReplayDraftWithoutClock = ReplayEventDraftV1 extends infer Event
+  ? Event extends ReplayEventDraftV1
+    ? Omit<Event, 'id' | 'atMs'>
+    : never
+  : never
+
+const createReplayRepository = () => {
+  try {
+    return new ReplayAttemptRepository(window.localStorage)
+  } catch {
+    const values = new Map<string, string>()
+    return new ReplayAttemptRepository({
+      getItem: (key) => values.get(key) ?? null,
+      setItem: (key, value) => { values.set(key, value) },
+      removeItem: (key) => { values.delete(key) },
+    })
+  }
+}
+
 export function App() {
   const [nodes, setNodes] = useState<SystemFlowNode[]>(seedNodes)
   const [edges, setEdges] = useState<SystemFlowEdge[]>(seedEdges)
@@ -78,6 +121,11 @@ export function App() {
   const [elapsedSeconds, setElapsedSeconds] = useState(18 * 60 + 42)
   const [interviewerOpen, setInterviewerOpen] = useState(true)
   const [challengeOpen, setChallengeOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [historyNotice, setHistoryNotice] = useState<{
+    message: string
+    tone: 'success' | 'error'
+  } | null>(null)
   const [events, setEvents] = useState<TimelineEvent[]>(initialEvents)
   const [answer, setAnswer] = useState('')
   const [feedback, setFeedback] = useState('')
@@ -86,6 +134,31 @@ export function App() {
   )
   const [interviewBusy, setInterviewBusy] = useState(false)
   const [judgeReport, setJudgeReport] = useState<JudgeReport | null>(null)
+  const [replayRepository] = useState(createReplayRepository)
+  const [savedAttempts, setSavedAttempts] = useState<ReplayAttemptV1[]>(() => {
+    try {
+      return replayRepository.list()
+    } catch {
+      return []
+    }
+  })
+  const [draftAttempt, setDraftAttempt] = useState<ReplayAttemptV1 | null>(null)
+  const [replayAttempt, setReplayAttempt] = useState<ReplayAttemptV1 | null>(null)
+  const [replayCursorMs, setReplayCursorMs] = useState(0)
+  const [replayPlaying, setReplayPlaying] = useState(false)
+  const [replaySpeed, setReplaySpeed] = useState(1)
+  const draftAttemptRef = useRef<ReplayAttemptV1 | null>(null)
+  const recordingElapsedMsRef = useRef(0)
+  const canonicalStateRef = useRef({ nodes, edges, load, fault })
+  const liveStateBeforeReplayRef = useRef<{
+    nodes: SystemFlowNode[]
+    edges: SystemFlowEdge[]
+    load: 1 | 3 | 10
+    fault: FaultMode
+    playing: boolean
+  } | null>(null)
+
+  canonicalStateRef.current = { nodes, edges, load, fault }
 
   // Simulation topology must not be invalidated by the live health/detail fields
   // that we write back into React Flow nodes on every tick.
@@ -114,6 +187,33 @@ export function App() {
         criticalPathConnected,
       }),
     [componentCounts, criticalPathConnected, edges.length, fault, load, nodes.length, tick],
+  )
+
+  const replayFrame = useMemo(
+    () => replayAttempt ? playReplayAt(replayAttempt, replayCursorMs) : null,
+    [replayAttempt, replayCursorMs],
+  )
+  const replayEvents = useMemo(
+    () => replayAttempt ? replayTimelineEvents(replayAttempt) : [],
+    [replayAttempt],
+  )
+  const activeReplayEvent = useMemo(
+    () => [...replayEvents].reverse().find((event) => event.atMs <= replayCursorMs) ?? null,
+    [replayCursorMs, replayEvents],
+  )
+  const historyItems = useMemo<HistoryAttemptItem[]>(
+    () => savedAttempts.map((attempt) => ({
+      id: attempt.id,
+      title: attempt.challengeId === urlShortenerChallenge.id
+        ? urlShortenerChallenge.title
+        : attempt.challengeId,
+      completedAt: attempt.updatedAt,
+      durationMs: attempt.durationMs,
+      score: attempt.summary?.score,
+      passed: attempt.summary?.passed,
+      keyMoment: replayKeyMoment(attempt),
+    })),
+    [savedAttempts],
   )
 
   const [telemetry, setTelemetry] = useState<TelemetryPoint[]>(() =>
@@ -147,25 +247,93 @@ export function App() {
     [elapsedSeconds],
   )
 
+  const recordAction = useCallback((draft: ReplayDraftWithoutClock) => {
+    const now = new Date()
+    let current = draftAttemptRef.current
+    let atMs = 0
+
+    if (!current) {
+      const canonical = canonicalStateRef.current
+      const startedAt = now.toISOString()
+      current = createReplayAttempt({
+        id: createStableId('attempt'),
+        challengeId: urlShortenerChallenge.id,
+        startedAt,
+        initial: toReplayInitial(
+          canonical.nodes,
+          canonical.edges,
+          canonical.load,
+          canonical.fault,
+        ),
+      })
+      recordingElapsedMsRef.current = 0
+      setElapsedSeconds(0)
+    } else {
+      atMs = recordingElapsedMsRef.current
+    }
+
+    const next = recordReplayEvent(
+      current,
+      {
+        ...draft,
+        id: createStableId('event'),
+        atMs,
+      } as ReplayEventDraftV1,
+      now.toISOString(),
+    )
+    draftAttemptRef.current = next
+    setDraftAttempt(next)
+    return next
+  }, [])
+
   useEffect(() => {
     setJudgeReport(null)
   }, [graphTopology])
 
   useEffect(() => {
-    if (!playing) return
+    if (replayAttempt || !playing) return
     const timer = window.setInterval(() => {
       setTick((value) => value + 1)
       setElapsedSeconds((value) => value + 1)
+      if (draftAttemptRef.current) recordingElapsedMsRef.current += 1000
     }, 900)
     return () => window.clearInterval(timer)
-  }, [playing])
+  }, [playing, replayAttempt])
 
   useEffect(() => {
+    if (!replayAttempt || !replayPlaying) return
+    let previous = performance.now()
+    const timer = window.setInterval(() => {
+      const now = performance.now()
+      const delta = (now - previous) * replaySpeed
+      previous = now
+      setReplayCursorMs((current) => {
+        const next = Math.min(replayAttempt.durationMs, current + delta)
+        if (next >= replayAttempt.durationMs) setReplayPlaying(false)
+        return next
+      })
+    }, 50)
+    return () => window.clearInterval(timer)
+  }, [replayAttempt, replayPlaying, replaySpeed])
+
+  useEffect(() => {
+    if (!replayFrame) return
+    const replayTick = Math.floor(replayCursorMs / 900)
+    const presentation = presentReplayFrame(replayFrame, replayTick, !replayPlaying)
+    setLoad(replayFrame.load)
+    setFault(replayFrame.fault)
+    setTick(replayTick)
+    setNodes(presentation.nodes)
+    setEdges(presentation.edges)
+  }, [replayCursorMs, replayFrame, replayPlaying])
+
+  useEffect(() => {
+    if (replayAttempt) return
     setTelemetry((history) => [
       ...history.slice(-27),
       { tick, ...snapshot.metrics },
     ])
-  }, [snapshot.metrics, tick])
+  }, [replayAttempt, snapshot.metrics, tick])
 
   useEffect(() => {
     setNodes((current) => {
@@ -236,84 +404,152 @@ export function App() {
           data: {
             tone: toneForHealth(targetHealth),
             intensity: load,
-            paused: !playing,
+            paused: replayAttempt ? !replayPlaying : !playing,
           },
         }
       }),
     )
-  }, [load, nodes, playing, snapshot.metrics])
+  }, [load, nodes, playing, replayAttempt, replayPlaying, snapshot.metrics])
 
   const onNodesChange = useCallback(
-    (changes: NodeChange<SystemFlowNode>[]) =>
-      setNodes((current) => applyNodeChanges(changes, current)),
-    [],
+    (changes: NodeChange<SystemFlowNode>[]) => {
+      setNodes((current) => applyNodeChanges(changes, current))
+      changes.forEach((change) => {
+        if (change.type !== 'remove') return
+        recordAction({
+          type: 'node.removed',
+          source: 'user',
+          payload: { nodeId: change.id },
+          timeline: {
+            title: 'Component removed',
+            detail: 'Topology recalculated',
+            tone: 'warning',
+          },
+        })
+      })
+    },
+    [recordAction],
   )
 
+  const onNodeDragStop = useCallback((node: SystemFlowNode) => {
+    recordAction({
+      type: 'node.updated',
+      source: 'user',
+      payload: { nodeId: node.id, patch: { position: { ...node.position } } },
+      timeline: {
+        title: `${node.data.label} moved`,
+        detail: 'Architecture layout updated',
+        tone: 'neutral',
+      },
+    })
+  }, [recordAction])
+
   const onEdgesChange = useCallback(
-    (changes: EdgeChange<SystemFlowEdge>[]) =>
-      setEdges((current) => applyEdgeChanges(changes, current)),
-    [],
+    (changes: EdgeChange<SystemFlowEdge>[]) => {
+      setEdges((current) => applyEdgeChanges(changes, current))
+      changes.forEach((change) => {
+        if (change.type !== 'remove') return
+        recordAction({
+          type: 'edge.removed',
+          source: 'user',
+          payload: { edgeId: change.id },
+          timeline: {
+            title: 'Connection removed',
+            detail: 'Topology recalculated',
+            tone: 'warning',
+          },
+        })
+      })
+    },
+    [recordAction],
   )
 
   const onConnect = useCallback(
     (connection: Connection) => {
+      if (!connection.source || !connection.target) return
+      const edge: SystemFlowEdge = {
+        ...connection,
+        id: createStableId('edge'),
+        type: 'traffic',
+        data: { tone: 'healthy', intensity: load, paused: !playing },
+      }
       setEdges((current) =>
-        addEdge<SystemFlowEdge>(
-          {
-            ...connection,
-            id: `edge-${Date.now()}`,
-            type: 'traffic',
-            data: { tone: 'healthy', intensity: load, paused: !playing },
-          },
-          current,
-        ),
+        addEdge<SystemFlowEdge>(edge, current),
       )
       addEvent('Connection added', 'Topology recalculated', 'healthy')
+      recordAction({
+        type: 'edge.added',
+        source: 'user',
+        payload: { edge: toReplayEdge(edge) },
+        timeline: {
+          title: 'Connection added',
+          detail: 'Topology recalculated',
+          tone: 'healthy',
+        },
+      })
     },
-    [addEvent, load, playing],
+    [addEvent, load, playing, recordAction],
   )
 
   const addNode = useCallback(
     (kind: ComponentKind) => {
       setActiveKind(kind)
-      setNodes((current) => {
-        const instance = (current.filter((node) => node.data.kind === kind).length ?? 0) + 1
-        const label =
-          kind === 'service' && instance === 1
-            ? 'Service'
-            : `${COMPONENT_LABELS[kind]}${instance > 1 ? ` ${instance}` : ''}`
-        const id = `${kind}-${Date.now()}`
-        return [
-          ...current.map((node) => ({ ...node, selected: false })),
-          {
-            id,
-            type: 'system',
-            selected: true,
-            position: {
-              x: 360 + (current.length % 4) * 42,
-              y: 120 + (current.length % 3) * 95,
-            },
-            data: {
-              kind,
-              label,
-              health: snapshot.nodeHealth[kind] ?? 'healthy',
-              detail: snapshot.nodeDetails[kind] ?? 'Healthy',
-              load,
-            },
-          } satisfies SystemFlowNode,
-        ]
-      })
+      const current = canonicalStateRef.current.nodes
+      const instance = current.filter((node) => node.data.kind === kind).length + 1
+      const label = kind === 'service' && instance === 1
+        ? 'Service'
+        : `${COMPONENT_LABELS[kind]}${instance > 1 ? ` ${instance}` : ''}`
+      const node: SystemFlowNode = {
+        id: createStableId(kind),
+        type: 'system',
+        selected: true,
+        position: {
+          x: 360 + (current.length % 4) * 42,
+          y: 120 + (current.length % 3) * 95,
+        },
+        data: {
+          kind,
+          label,
+          health: snapshot.nodeHealth[kind] ?? 'healthy',
+          detail: snapshot.nodeDetails[kind] ?? 'Healthy',
+          load,
+        },
+      }
+      setNodes((nodes) => [
+        ...nodes.map((item) => ({ ...item, selected: false })),
+        node,
+      ])
       addEvent(`${COMPONENT_LABELS[kind]} added`, 'Connect it to change the live model', 'healthy')
+      recordAction({
+        type: 'node.added',
+        source: 'user',
+        payload: { node: toReplayNode(node) },
+        timeline: {
+          title: `${label} added`,
+          detail: 'Connect it to change the live model',
+          tone: 'healthy',
+        },
+      })
     },
-    [addEvent, load, snapshot.nodeDetails, snapshot.nodeHealth],
+    [addEvent, load, recordAction, snapshot.nodeDetails, snapshot.nodeHealth],
   )
 
   const changeLoad = useCallback(
     (nextLoad: 1 | 3 | 10) => {
       setLoad(nextLoad)
       addEvent(`Load increased to ${nextLoad}×`, `${nextLoad * 10}k req/s offered`, nextLoad === 10 ? 'warning' : 'healthy')
+      recordAction({
+        type: 'load.changed',
+        source: 'user',
+        payload: { load: nextLoad },
+        timeline: {
+          title: `Load changed to ${nextLoad}×`,
+          detail: `${nextLoad * 10}k req/s offered`,
+          tone: nextLoad === 10 ? 'warning' : 'healthy',
+        },
+      })
     },
-    [addEvent],
+    [addEvent, recordAction],
   )
 
   const changeFault = useCallback(
@@ -326,8 +562,22 @@ export function App() {
         nextFault === 'none' ? 'System is recovering' : 'Fault injected into the simulation',
         tone,
       )
+      recordAction({
+        type: 'fault.changed',
+        source: 'user',
+        payload: { fault: nextFault },
+        timeline: {
+          title: nextFault === 'none'
+            ? 'Fault cleared'
+            : nextFault === 'cache-outage'
+              ? 'Redis became unavailable'
+              : FAULT_LABELS[nextFault],
+          detail: nextFault === 'none' ? 'System is recovering' : 'Fault injected into the simulation',
+          tone,
+        },
+      })
     },
-    [addEvent],
+    [addEvent, recordAction],
   )
 
   const submitDesign = useCallback(() => {
@@ -343,10 +593,78 @@ export function App() {
       `${report.score}/100 · ${report.passedCases}/${report.totalCases} cases passed`,
       report.passed ? 'healthy' : report.score >= 60 ? 'warning' : 'critical',
     )
-  }, [addEvent, componentCounts, criticalPathConnected, edges.length, nodes.length])
+    const recorded = recordAction({
+      type: 'design.submitted',
+      source: 'user',
+      payload: {
+        submission: {
+          judgeVersion: report.judgeVersion,
+          score: report.score,
+          maxScore: report.maxScore,
+          passed: report.passed,
+          passedCases: report.passedCases,
+          totalCases: report.totalCases,
+        },
+      },
+      timeline: {
+        title: `Design submitted · ${report.score}/100`,
+        detail: `${report.passedCases} of ${report.totalCases} cases passed`,
+        tone: report.passed ? 'healthy' : report.score >= 60 ? 'warning' : 'critical',
+      },
+    })
+    const criticalEvent = recorded.events.find((event) => event.timeline?.tone === 'critical')
+    const initialFailure = recorded.initial.fault === 'none' ? null : {
+      title: recorded.initial.fault === 'cache-outage'
+        ? 'Attempt started with Redis unavailable'
+        : `Attempt started with ${FAULT_LABELS[recorded.initial.fault].toLowerCase()}`,
+      detail: 'This failure was already active in the initial state.',
+      tone: 'critical' as const,
+      atMs: 0,
+    }
+    const completed: ReplayAttemptV1 = {
+      ...recorded,
+      summary: {
+        score: report.score,
+        maxScore: report.maxScore,
+        passed: report.passed,
+        keyMoment: criticalEvent?.timeline ? {
+          ...criticalEvent.timeline,
+          atMs: criticalEvent.atMs,
+          eventId: criticalEvent.id,
+        } : initialFailure ?? {
+          title: 'Design submitted without an injected failure',
+          detail: 'The submission captured the final architecture state.',
+          tone: 'neutral',
+          atMs: recorded.durationMs,
+        },
+      },
+    }
+    try {
+      replayRepository.save(completed)
+      setSavedAttempts(replayRepository.list())
+      addEvent('Attempt saved', 'Replay is available in History', 'healthy')
+    } catch {
+      addEvent('Replay not saved', 'Local storage is unavailable', 'warning')
+    }
+    draftAttemptRef.current = null
+    recordingElapsedMsRef.current = 0
+    setDraftAttempt(null)
+  }, [
+    addEvent,
+    componentCounts,
+    criticalPathConnected,
+    edges.length,
+    fault,
+    load,
+    nodes.length,
+    recordAction,
+    replayRepository,
+  ])
 
   const shareScenario = useCallback(async () => {
-    const serialized = JSON.stringify(
+    const serialized = replayAttempt
+      ? serializeReplayEnvelope(replayAttempt, { redactAnswers: true, pretty: true })
+      : JSON.stringify(
       {
         version: 1,
         challenge: urlShortenerChallenge.id,
@@ -369,11 +687,120 @@ export function App() {
 
     try {
       await navigator.clipboard.writeText(serialized)
-      addEvent('Scenario copied', 'Architecture snapshot is ready to share', 'healthy')
+      addEvent(
+        replayAttempt ? 'Replay copied' : 'Scenario copied',
+        replayAttempt ? 'The full attempt is ready to import' : 'Architecture snapshot is ready to share',
+        'healthy',
+      )
     } catch {
       addEvent('Share unavailable', 'Clipboard access was not granted', 'warning')
     }
-  }, [addEvent, edges, fault, load, nodes])
+  }, [addEvent, edges, fault, load, nodes, replayAttempt])
+
+  const openHistory = useCallback(() => {
+    setChallengeOpen(false)
+    setInterviewerOpen(false)
+    setHistoryNotice(null)
+    setHistoryOpen(true)
+  }, [])
+
+  const startReplay = useCallback((attemptId: string) => {
+    const attempt = savedAttempts.find((candidate) => candidate.id === attemptId)
+    if (!attempt) return
+    if (!replayAttempt) {
+      liveStateBeforeReplayRef.current = {
+        nodes: canonicalStateRef.current.nodes,
+        edges: canonicalStateRef.current.edges,
+        load: canonicalStateRef.current.load,
+        fault: canonicalStateRef.current.fault,
+        playing,
+      }
+    }
+    setChallengeOpen(false)
+    setHistoryOpen(false)
+    setInterviewerOpen(false)
+    setReplayAttempt(attempt)
+    setReplayCursorMs(0)
+    setReplayPlaying(false)
+    setReplaySpeed(1)
+  }, [playing, replayAttempt, savedAttempts])
+
+  const exitReplay = useCallback(() => {
+    const live = liveStateBeforeReplayRef.current
+    setReplayPlaying(false)
+    setReplayAttempt(null)
+    setReplayCursorMs(0)
+    setHistoryOpen(false)
+    if (live) {
+      setNodes(live.nodes)
+      setEdges(live.edges)
+      setLoad(live.load)
+      setFault(live.fault)
+      setPlaying(live.playing)
+    }
+    liveStateBeforeReplayRef.current = null
+    setInterviewerOpen(true)
+  }, [])
+
+  const deleteReplay = useCallback((attemptId: string) => {
+    try {
+      replayRepository.remove(attemptId)
+      setSavedAttempts(replayRepository.list())
+      if (replayAttempt?.id === attemptId) exitReplay()
+    } catch {
+      setHistoryNotice({ message: 'Could not delete replay. Local storage is unavailable.', tone: 'error' })
+      addEvent('Could not delete replay', 'Local storage is unavailable', 'warning')
+    }
+  }, [addEvent, exitReplay, replayAttempt?.id, replayRepository])
+
+  const importReplay = useCallback(async (file: File) => {
+    try {
+      const result = parseReplayEnvelope(await file.text())
+      if (!result.ok) {
+        setHistoryNotice({ message: result.error.message, tone: 'error' })
+        addEvent('Replay import failed', result.error.message, 'critical')
+        return
+      }
+      replayRepository.save(verifyImportedUrlShortenerAttempt(result.value.attempt))
+      setSavedAttempts(replayRepository.list())
+      setHistoryOpen(true)
+      setHistoryNotice({
+        message: result.migrated
+          ? 'Imported and migrated the v0.1 scenario snapshot.'
+          : 'Replay imported and saved on this device.',
+        tone: 'success',
+      })
+      addEvent(
+        result.migrated ? 'Scenario migrated' : 'Replay imported',
+        result.migrated ? 'The v0.1 snapshot is now replayable' : 'Saved to this device',
+        'healthy',
+      )
+    } catch {
+      setHistoryNotice({ message: 'The selected replay file could not be read.', tone: 'error' })
+      addEvent('Replay import failed', 'The selected file could not be read', 'critical')
+    }
+  }, [addEvent, replayRepository])
+
+  const seekReplay = useCallback((cursorMs: number) => {
+    if (!replayAttempt) return
+    setReplayPlaying(false)
+    setReplayCursorMs(Math.min(replayAttempt.durationMs, Math.max(0, cursorMs)))
+  }, [replayAttempt])
+
+  const toggleReplay = useCallback(() => {
+    if (!replayAttempt) return
+    if (replayCursorMs >= replayAttempt.durationMs) setReplayCursorMs(0)
+    setReplayPlaying((current) => !current)
+  }, [replayAttempt, replayCursorMs])
+
+  const seekReplayEvent = useCallback((direction: -1 | 1) => {
+    if (!replayAttempt) return
+    const candidates = replayTimelineEvents(replayAttempt)
+    const event = direction < 0
+      ? [...candidates].reverse().find((candidate) => candidate.atMs < replayCursorMs - 50)
+      : candidates.find((candidate) => candidate.atMs > replayCursorMs + 50)
+    seekReplay(event?.atMs ?? (direction < 0 ? 0 : replayAttempt.durationMs))
+  }, [replayAttempt, replayCursorMs, seekReplay])
 
   const interviewContext = useMemo<InterviewContext>(
     () => ({
@@ -389,6 +816,7 @@ export function App() {
   )
 
   useEffect(() => {
+    if (replayAttempt) return
     let cancelled = false
     interviewRouter
       .respond({ action: 'continue', context: interviewContext })
@@ -398,7 +826,7 @@ export function App() {
     return () => {
       cancelled = true
     }
-  }, [fault, load, criticalPathConnected])
+  }, [fault, load, criticalPathConnected, replayAttempt])
 
   const runInterviewAction = useCallback(
     async (action: InterviewAction) => {
@@ -413,29 +841,51 @@ export function App() {
         setFeedback(response.message)
         if (action === 'answer') {
           addEvent('Answer reviewed', `Focus: ${response.focus}`, 'neutral')
+          recordAction({
+            type: 'answer.submitted',
+            source: 'interviewer',
+            payload: {
+              answer,
+              prompt,
+              feedback: response.message,
+              focus: response.focus,
+            },
+            timeline: {
+              title: 'Answer reviewed',
+              detail: `Focus: ${response.focus}`,
+              tone: 'neutral',
+            },
+          })
           setAnswer('')
         }
       } finally {
         window.setTimeout(() => setInterviewBusy(false), 180)
       }
     },
-    [addEvent, answer, interviewContext],
+    [addEvent, answer, interviewContext, prompt, recordAction],
   )
 
   return (
     <div
       className={`app-shell ${interviewerOpen ? 'interviewer-open' : 'interviewer-closed'} ${
-        playing ? 'simulation-running' : 'simulation-paused'
-      }`}
+        (replayAttempt ? replayPlaying : playing) ? 'simulation-running' : 'simulation-paused'
+      } ${replayAttempt ? 'replay-mode' : ''}`}
     >
       <TopBar
-        elapsedSeconds={elapsedSeconds}
-        playing={playing}
+        elapsedSeconds={replayAttempt ? Math.floor(replayCursorMs / 1000) : elapsedSeconds}
+        playing={replayAttempt ? replayPlaying : playing}
         onTogglePlaying={() => setPlaying((value) => !value)}
-        interviewerOpen={interviewerOpen}
+        interviewerOpen={interviewerOpen && !historyOpen && !replayAttempt}
         onToggleInterviewer={() => setInterviewerOpen((value) => !value)}
-        onOpenChallenge={() => setChallengeOpen(true)}
+        onOpenChallenge={() => {
+          if (!replayAttempt) setChallengeOpen(true)
+        }}
+        onOpenHistory={openHistory}
         onShare={() => void shareScenario()}
+        replayMode={Boolean(replayAttempt)}
+        recording={Boolean(draftAttempt)}
+        replayDurationSeconds={Math.floor((replayAttempt?.durationMs ?? 0) / 1000)}
+        onExitReplay={exitReplay}
       />
       <div className="workspace">
         <ArchitectureCanvas
@@ -446,14 +896,38 @@ export function App() {
           fault={fault}
           telemetry={telemetry}
           onNodesChange={onNodesChange}
+          onNodeDragStop={onNodeDragStop}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
           onAddNode={addNode}
           onNodeKindSelected={setActiveKind}
           onLoadChange={changeLoad}
           onFaultChange={changeFault}
+          readOnly={Boolean(replayAttempt)}
+          fitViewKey={replayAttempt?.id ?? 'live'}
+          bottomOverlay={replayAttempt ? (
+            <ReplayTimeline
+              cursorMs={replayCursorMs}
+              durationMs={replayAttempt.durationMs}
+              playing={replayPlaying}
+              speed={replaySpeed}
+              events={replayEvents}
+              activeEvent={activeReplayEvent}
+              metrics={{
+                throughput: formatMetric(snapshot.metrics.throughput, 'throughput'),
+                p99: formatMetric(snapshot.metrics.p99, 'p99'),
+                errors: `${snapshot.metrics.errorRate.toFixed(1)}%`,
+                dbCpu: `${Math.round(snapshot.metrics.dbCpu)}%`,
+              }}
+              onCursorChange={seekReplay}
+              onTogglePlaying={toggleReplay}
+              onPreviousEvent={() => seekReplayEvent(-1)}
+              onNextEvent={() => seekReplayEvent(1)}
+              onSpeedChange={setReplaySpeed}
+            />
+          ) : undefined}
         />
-        <InterviewerPanel
+        {!historyOpen && !replayAttempt && <InterviewerPanel
           open={interviewerOpen}
           providerLabel="Local preview"
           prompt={prompt}
@@ -467,11 +941,41 @@ export function App() {
           onReview={() => void runInterviewAction('review')}
           onContinue={() => void runInterviewAction('continue')}
           onClose={() => setInterviewerOpen((value) => !value)}
-        />
+        />}
+        {historyOpen && (
+          <HistoryPanel
+            open
+            attempts={historyItems}
+            notice={historyNotice}
+            onClose={() => {
+              setHistoryOpen(false)
+              if (!replayAttempt) setInterviewerOpen(true)
+            }}
+            onReplay={startReplay}
+            onDelete={deleteReplay}
+            onExport={(attemptId) => {
+              const attempt = savedAttempts.find((candidate) => candidate.id === attemptId)
+              if (attempt) downloadReplay(attempt)
+            }}
+            onImport={(file) => void importReplay(file)}
+          />
+        )}
+        {replayAttempt && !historyOpen && (
+          <ReplayPanel
+            score={replayAttempt.summary?.score}
+            passed={replayAttempt.summary?.passed}
+            keyMoment={replayKeyMoment(replayAttempt)}
+            events={replayEvents}
+            cursorMs={replayCursorMs}
+            activeEventId={activeReplayEvent?.id}
+            onSeek={seekReplay}
+            onExport={() => downloadReplay(replayAttempt)}
+          />
+        )}
       </div>
       <ChallengePanel
         challenge={urlShortenerChallenge}
-        open={challengeOpen}
+        open={challengeOpen && !replayAttempt}
         onClose={() => setChallengeOpen(false)}
         onRunCase={(nextLoad, nextFault) => {
           changeLoad(nextLoad)
@@ -481,7 +985,9 @@ export function App() {
         onSubmitDesign={submitDesign}
       />
       <div className="screen-reader-status" aria-live="polite">
-        {playing ? 'Simulation running' : 'Simulation paused'}. {snapshot.severity} state.
+        {replayAttempt
+          ? `Replay ${replayPlaying ? 'playing' : 'paused'} at ${formatClock(Math.floor(replayCursorMs / 1000))}.`
+          : `${playing ? 'Simulation running' : 'Simulation paused'}. ${snapshot.severity} state.${draftAttempt ? ' Attempt recording.' : ''}`}
       </div>
     </div>
   )

@@ -1,0 +1,165 @@
+import { Download, FileUp, History, Play, Trash2, X } from 'lucide-react'
+import { useEffect, useRef, type ChangeEvent } from 'react'
+
+export interface HistoryAttemptItem {
+  id: string
+  title: string
+  completedAt: string
+  durationMs: number
+  score?: number
+  passed?: boolean
+  keyMoment: string
+}
+
+interface HistoryPanelProps {
+  open: boolean
+  attempts: HistoryAttemptItem[]
+  notice?: { message: string; tone: 'success' | 'error' } | null
+  onClose: () => void
+  onReplay: (attemptId: string) => void
+  onDelete: (attemptId: string) => void
+  onExport: (attemptId: string) => void
+  onImport: (file: File) => void
+}
+
+const formatDuration = (valueMs: number) => {
+  const totalSeconds = Math.floor(valueMs / 1000)
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
+}
+
+const formatDate = (value: string) => {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+}
+
+export function HistoryPanel({
+  open,
+  attempts,
+  notice,
+  onClose,
+  onReplay,
+  onDelete,
+  onExport,
+  onImport,
+}: HistoryPanelProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const closeButtonRef = useRef<HTMLButtonElement>(null)
+  const panelRef = useRef<HTMLElement>(null)
+  const openerRef = useRef<HTMLElement | null>(null)
+  const onCloseRef = useRef(onClose)
+
+  useEffect(() => {
+    onCloseRef.current = onClose
+  }, [onClose])
+
+  useEffect(() => {
+    if (!open) return
+    openerRef.current = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null
+    const frame = window.requestAnimationFrame(() => closeButtonRef.current?.focus())
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onCloseRef.current()
+        return
+      }
+      if (event.key !== 'Tab') return
+      const focusable = [...(panelRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+      ) ?? [])].filter((element) => element.offsetParent !== null)
+      if (focusable.length === 0) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      window.cancelAnimationFrame(frame)
+      window.removeEventListener('keydown', handleKeyDown)
+      openerRef.current?.focus()
+      openerRef.current = null
+    }
+  }, [open])
+
+  if (!open) return null
+
+  const handleImport = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (file) onImport(file)
+    event.target.value = ''
+  }
+
+  return (
+    <aside ref={panelRef} className="history-panel" role="dialog" aria-modal="true" aria-label="Saved attempts">
+      <header className="history-panel-header">
+        <div>
+          <strong>History</strong>
+          <span>Saved on this device</span>
+        </div>
+        <button ref={closeButtonRef} type="button" onClick={onClose} aria-label="Close history"><X size={19} /></button>
+      </header>
+
+      <div className="history-panel-body">
+        {notice && (
+          <div
+            className={`history-notice is-${notice.tone}`}
+            role={notice.tone === 'error' ? 'alert' : 'status'}
+          >
+            {notice.message}
+          </div>
+        )}
+        {attempts.length === 0 ? (
+          <div className="history-empty">
+            <span aria-hidden="true"><History size={22} /></span>
+            <strong>No saved attempts yet.</strong>
+            <p>Submit a design to keep its full failure replay here.</p>
+          </div>
+        ) : (
+          <ol className="history-list">
+            {attempts.map((attempt) => (
+              <li key={attempt.id}>
+                <div className="history-attempt-heading">
+                  <span>
+                    <strong>{attempt.title}</strong>
+                    <small>{formatDate(attempt.completedAt)}</small>
+                  </span>
+                  {attempt.score === undefined
+                    ? <strong className="is-snapshot">—</strong>
+                    : <strong className={attempt.passed ? 'is-passed' : 'is-failed'}>{attempt.score}</strong>}
+                </div>
+                <p>{attempt.keyMoment}</p>
+                <div className="history-attempt-meta">
+                  <span>{attempt.score === undefined ? 'Snapshot' : attempt.passed ? 'Passed' : 'Needs work'} · {formatDuration(attempt.durationMs)}</span>
+                  <div>
+                    <button type="button" onClick={() => onExport(attempt.id)} aria-label={`Export ${attempt.title} replay`}><Download size={16} /></button>
+                    <button type="button" onClick={() => onDelete(attempt.id)} aria-label={`Delete ${attempt.title} replay`}><Trash2 size={16} /></button>
+                    <button className="history-replay-button" type="button" onClick={() => onReplay(attempt.id)}><Play size={15} fill="currentColor" /> Replay</button>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ol>
+        )}
+      </div>
+
+      <footer className="history-panel-footer">
+        <input ref={fileInputRef} type="file" accept="application/json,.json" onChange={handleImport} />
+        <button type="button" onClick={() => fileInputRef.current?.click()}><FileUp size={17} /> Import replay</button>
+      </footer>
+    </aside>
+  )
+}

@@ -18,11 +18,14 @@ The first release is intentionally focused on one coherent URL-shortener scenari
 2. Build a topology on the canvas.
 3. Run public load and failure cases.
 4. Submit against the complete deterministic judge, including redacted hidden cases.
-5. Use the score, telemetry, and interviewer feedback to improve the design and run again.
+5. Open the saved attempt in History and replay the exact architecture, load, fault, and submission sequence.
+6. Use the score, telemetry, and interviewer feedback to improve the design and run again.
 
 The launch topology scores `76/100`. Connecting a complete second cache path makes the cache-outage case pass and raises the score to `83/100`; dropping an unconnected box onto the canvas changes nothing.
 
 ![Faultline submission result](docs/assets/faultline-judge-result.png)
+
+![Faultline failure replay](docs/assets/faultline-replay.png)
 
 ## What works today
 
@@ -33,8 +36,11 @@ The launch topology scores `76/100`. Connecting a complete second cache path mak
 - Live traffic animation and telemetry for throughput, p99 latency, errors, database CPU, cache misses, and queue depth.
 - Deterministic load controls (`1x`, `3x`, `10x`) and four fault injections: cache outage, slow database, network partition, and retry storm.
 - A local interviewer with follow-up questions, hints, design review, and answer feedback informed by the current diagram and simulation metrics.
-- Interview timer, pause/run control, event history, shareable JSON snapshots, full component creation, and responsive desktop/mobile layouts.
-- Unit coverage for simulation behavior, topology reachability, judge scoring/redaction, and provider routing.
+- Semantic attempt recording for load, fault, topology, interviewer-answer, and submission actions without storing derived animation noise.
+- Local attempt history with deterministic play/pause, scrub, previous/next event controls, `0.5x`/`1x`/`2x` speed, and synchronized metrics.
+- Versioned public replay export/import, strict validation, safe local-storage retention, and migration from the v0.1 scenario snapshot.
+- Interview timer, pause/run control, event history, full component creation, and responsive desktop/mobile layouts.
+- Unit coverage for simulation behavior, topology reachability, judge scoring/redaction, provider routing, replay reduction, serialization, migration, and persistence.
 
 ## Run locally
 
@@ -97,7 +103,7 @@ The planned server is Go (`net/http` with Chi): one small binary for challenge m
 
 ## Privacy
 
-This release makes no AI or analytics API calls. Interview answers, diagram state, and telemetry remain in the browser for the current session. No API key is required. When a remote provider is added, proxy it through a backend and never place secrets in Vite environment variables or client bundles.
+This release makes no AI or analytics API calls. Completed attempts are stored only in this browser's local storage so History survives a reload; exported replay files are created only when you explicitly request them and redact interview-answer text by default. No API key is required. When a remote provider is added, proxy it through a backend and never place secrets in Vite environment variables or client bundles.
 
 ## Contributing
 
@@ -113,6 +119,7 @@ src/
   domain/       Shared system-design and simulation contracts
   interview/    Provider interface, router, local interviewer, and tests
   judge/         Deterministic public/hidden suite, redaction, scoring, and tests
+  replay/        Versioned semantic log, reducer, import/export, repository, and tests
   simulation/   Deterministic engine, topology analysis, and tests
   App.tsx       Canvas orchestration and end-to-end interaction state
   styles.css    Responsive visual and motion system
