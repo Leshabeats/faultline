@@ -15,11 +15,11 @@ The first release is intentionally focused on one coherent URL-shortener scenari
 ## Practice loop
 
 1. Read the challenge and capacity requirements.
-2. Build a topology on the canvas.
-3. Run public load and failure cases.
-4. Submit against the complete deterministic judge, including redacted hidden cases.
-5. Open the saved attempt in History and replay the exact architecture, load, fault, and submission sequence.
-6. Use the score, telemetry, and interviewer feedback to improve the design and run again.
+2. Predict the first bottleneck and commit the reasoning before seeing the model.
+3. Build a topology, tune the read path, and watch latency, saturation, and estimated cost move together.
+4. Defend the trade-off when the interviewer challenges the assumptions.
+5. Submit against the complete deterministic judge, including redacted hidden cases.
+6. Replay the exact architecture, capacity choices, load, fault, reasoning, and submission sequence.
 
 The launch topology scores `76/100`. Connecting a complete second cache path makes the cache-outage case pass and raises the score to `83/100`; dropping an unconnected box onto the canvas changes nothing.
 
@@ -34,9 +34,11 @@ The launch topology scores `76/100`. Connecting a complete second cache path mak
 - A deterministic local judge: submit the current topology, see per-case pass/fail, a 0–100 score, four-dimension breakdown, then improve the diagram and run again.
 - Stateful, animated icons for clients, gateways, services, caches, queues, databases, and regions.
 - Live traffic animation and telemetry for throughput, p99 latency, errors, database CPU, cache misses, and queue depth.
+- Bottleneck Defense: prediction-before-feedback, cache/index/pool/replica/database tuning, and a live baseline comparison.
+- A versioned estimated cost model with monthly cost, cost per million redirects, workload math, storage footprint, and disclosed assumptions.
 - Deterministic load controls (`1x`, `3x`, `10x`) and four fault injections: cache outage, slow database, network partition, and retry storm.
 - A local interviewer with follow-up questions, hints, design review, and answer feedback informed by the current diagram and simulation metrics.
-- Semantic attempt recording for load, fault, topology, interviewer-answer, and submission actions without storing derived animation noise.
+- Semantic attempt recording for load, fault, topology, capacity tuning, interviewer-answer, and submission actions without storing derived animation noise.
 - Local attempt history with deterministic play/pause, scrub, previous/next event controls, `0.5x`/`1x`/`2x` speed, and synchronized metrics.
 - Versioned public replay export/import, strict validation, safe local-storage retention, and migration from the v0.1 scenario snapshot.
 - Interview timer, pause/run control, event history, full component creation, and responsive desktop/mobile layouts.
@@ -64,7 +66,9 @@ npm run preview   # serve the production bundle locally
 
 ## Simulation truth and interview providers
 
-The simulation engine is the source of truth. Given the same load, fault, and tick, it computes the same capacity state, node health, and metrics. An interview provider may interpret that state, ask a question, or critique an answer; it must not invent or overwrite simulation results.
+The simulation engine is the source of truth. Given the same workload, capacity choices, topology, fault, and tick, it computes the same state, node health, metrics, and estimate. An interview provider may interpret that state, ask a question, or critique an answer; it must not invent or overwrite simulation results.
+
+Cost is intentionally labeled `Estimated`. The `reference-2026.08` model is a transparent scenario model, not an AWS, GCP, or Azure quote: it exposes the retention, row-size, replica-efficiency, component-price, and storage-price assumptions that produced the number. Production pricing should be versioned by provider, region, and pricing date before it is presented as a cloud bill forecast.
 
 The current `LocalInterviewProvider` is a deterministic, offline preview. `InterviewRouter` keeps the UI independent from the provider, so a future OpenAI-compatible or Perplexity-backed implementation can be registered without changing callers.
 
@@ -115,6 +119,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Product d
 src/
   challenges/   Challenge manifests, requirements, cases, and rubrics
   canvas/       React Flow nodes, edges, types, and launch scenario
+  capacity/     Workload, bottleneck, database tuning, and cost model
   components/   Product chrome, controls, telemetry, and animated icons
   domain/       Shared system-design and simulation contracts
   interview/    Provider interface, router, local interviewer, and tests

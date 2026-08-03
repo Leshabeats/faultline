@@ -88,6 +88,24 @@ describe('replay reduction', () => {
     attempt = recordReplayEvent(
       attempt,
       event({
+        id: 'capacity',
+        atMs: 1_250,
+        source: 'user',
+        type: 'capacity.changed',
+        payload: {
+          capacity: {
+            cacheHitRate: 0.99,
+            indexedLookup: true,
+            poolSize: 600,
+            readReplicas: 2,
+            databaseProfile: 'performance',
+          },
+        },
+      }),
+    )
+    attempt = recordReplayEvent(
+      attempt,
+      event({
         id: 'answer',
         atMs: 1_500,
         source: 'user',
@@ -126,6 +144,10 @@ describe('replay reduction', () => {
     expect(atStress.load).toBe(10)
     expect(atStress.fault).toBe('cache-outage')
     expect(atStress.answers).toHaveLength(0)
+    expect(playReplayAt(attempt, 1_250).capacity).toMatchObject({
+      indexedLookup: true,
+      readReplicas: 2,
+    })
 
     const completed = playReplayAt(attempt, Number.POSITIVE_INFINITY)
     expect(completed.currentTimeMs).toBe(2_000)

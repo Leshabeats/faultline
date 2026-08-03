@@ -43,6 +43,57 @@ export interface SimulationSnapshot {
   nodeHealth: Partial<Record<ComponentKind, ComponentHealth>>
   nodeDetails: Partial<Record<ComponentKind, string>>
   severity: 'normal' | 'degraded' | 'critical'
+  capacity?: CapacityReport
+}
+
+export type DatabaseProfile = 'compact' | 'balanced' | 'performance'
+export type CacheHitRate = 0.9 | 0.95 | 0.99
+export type ConnectionPoolSize = 100 | 300 | 600
+export type ReadReplicaCount = 0 | 1 | 2
+
+export interface CapacityTuning {
+  cacheHitRate: CacheHitRate
+  indexedLookup: boolean
+  poolSize: ConnectionPoolSize
+  readReplicas: ReadReplicaCount
+  databaseProfile: DatabaseProfile
+}
+
+export type BottleneckKind =
+  | 'cache'
+  | 'service'
+  | 'connection-pool'
+  | 'database'
+
+export interface CapacityCostBreakdown {
+  edgeAndService: number
+  cacheAndQueue: number
+  databaseCompute: number
+  databaseStorage: number
+  total: number
+}
+
+export interface CapacityReport {
+  modelVersion: 'reference-2026.08'
+  modelStatus: 'estimated'
+  workload: {
+    redirectRps: number
+    createRps: number
+    effectiveCacheHitRate: number
+    databaseReadRps: number
+    retainedRows: number
+    rawStorageGiB: number
+  }
+  utilization: {
+    database: number
+    connectionPool: number
+    service: number
+  }
+  metrics: SimulationMetrics
+  cost: CapacityCostBreakdown & { perMillionRedirects: number }
+  bottleneck: BottleneckKind
+  status: 'within-envelope' | 'at-risk' | 'saturated'
+  assumptions: string[]
 }
 
 export interface SimulationInput {
@@ -53,6 +104,7 @@ export interface SimulationInput {
   edgeCount?: number
   componentCounts?: Partial<Record<ComponentKind, number>>
   criticalPathConnected?: boolean
+  capacity?: CapacityTuning
 }
 
 export interface TelemetryPoint extends SimulationMetrics {

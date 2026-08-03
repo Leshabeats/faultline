@@ -6,6 +6,7 @@ import {
   Lightbulb,
   List,
   LoaderCircle,
+  Gauge,
   Send,
 } from 'lucide-react'
 import type { TimelineEvent } from '../domain/system'
@@ -23,6 +24,7 @@ interface InterviewerPanelProps {
   onHint: () => void
   onReview: () => void
   onContinue: () => void
+  onOpenCapacity: () => void
   onClose: () => void
 }
 
@@ -39,6 +41,7 @@ export function InterviewerPanel({
   onHint,
   onReview,
   onContinue,
+  onOpenCapacity,
   onClose,
 }: InterviewerPanelProps) {
   const submit = (event: FormEvent) => {
@@ -54,9 +57,14 @@ export function InterviewerPanel({
           <strong>Interviewer</strong>
           <span>{providerLabel}</span>
         </div>
-        <button type="button" onClick={onClose} aria-label="Close interviewer">
-          <ChevronLeft size={21} />
-        </button>
+        <div className="panel-header-actions">
+          <button type="button" onClick={onOpenCapacity} aria-label="Open bottleneck defense" title="Bottleneck Defense">
+            <Gauge size={19} />
+          </button>
+          <button type="button" onClick={onClose} aria-label="Close interviewer">
+            <ChevronLeft size={21} />
+          </button>
+        </div>
       </header>
       <div className="interviewer-body">
         <h2>{prompt}</h2>

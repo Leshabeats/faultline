@@ -1,5 +1,6 @@
 import type { SystemFlowEdge, SystemFlowNode } from '../canvas/types'
 import type { ComponentHealth, FaultMode } from '../domain/system'
+import type { CapacityTuning } from '../domain/system'
 import { computeSimulation, formatMetric } from '../simulation/engine'
 import { analyzeTopology } from '../simulation/topology'
 import { serializeReplayEnvelope } from './serialization'
@@ -55,10 +56,12 @@ export const toReplayInitial = (
   edges: SystemFlowEdge[],
   load: 1 | 3 | 10,
   fault: FaultMode,
+  capacity?: CapacityTuning,
 ): ReplayInitialStateV1 => ({
   architecture: { nodes: nodes.map(toReplayNode), edges: edges.map(toReplayEdge) },
   load,
   fault,
+  ...(capacity ? { capacity: { ...capacity } } : {}),
 })
 
 const fromReplayNode = (node: ReplayNodeV1, load: 1 | 3 | 10): SystemFlowNode => ({
@@ -92,6 +95,7 @@ export const presentReplayFrame = (
     edgeCount: baseEdges.length,
     componentCounts: analysis.componentCounts,
     criticalPathConnected: analysis.criticalPathConnected,
+    capacity: frame.capacity,
   })
   const routedNodeIdSet = new Set(analysis.routedNodeIds)
   const routedCaches = baseNodes.filter(

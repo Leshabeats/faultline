@@ -36,6 +36,22 @@ describe('replay serialization', () => {
     expect(parsed.value.exportedAt).toBe(attempt.updatedAt)
   })
 
+  it('round-trips capacity tuning used by deterministic playback', () => {
+    const attempt = createCompletedTestAttempt()
+    attempt.initial.capacity = {
+      cacheHitRate: 0.95,
+      indexedLookup: true,
+      poolSize: 300,
+      readReplicas: 1,
+      databaseProfile: 'balanced',
+    }
+    const parsed = parseReplayEnvelope(serializeReplayEnvelope(attempt))
+
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+    expect(parsed.value.attempt.initial.capacity).toEqual(attempt.initial.capacity)
+  })
+
   it('can redact interview content for a public share without mutating local history', () => {
     const envelope = createReplayEnvelope(createCompletedTestAttempt())
     const serialized = serializeReplayEnvelope(envelope, { redactAnswers: true })
@@ -58,6 +74,13 @@ describe('replay serialization', () => {
         challenge: 'url-shortener',
         load: 10,
         fault: 'cache-outage',
+        capacity: {
+          cacheHitRate: 0.99,
+          indexedLookup: true,
+          poolSize: 600,
+          readReplicas: 2,
+          databaseProfile: 'performance',
+        },
         nodes: [
           {
             id: 'client',
@@ -77,6 +100,7 @@ describe('replay serialization', () => {
     expect(result.value.attempt.initial).toMatchObject({
       load: 10,
       fault: 'cache-outage',
+      capacity: { indexedLookup: true, readReplicas: 2 },
       architecture: { nodes: [{ data: { kind: 'client', label: 'Clients' } }] },
     })
   })

@@ -11,6 +11,10 @@ import { ArchitectureCanvas } from './canvas/ArchitectureCanvas'
 import { seedEdges, seedNodes } from './canvas/seed'
 import type { SystemFlowEdge, SystemFlowNode } from './canvas/types'
 import { InterviewerPanel } from './components/InterviewerPanel'
+import {
+  BottleneckPanel,
+  type BottleneckPrediction,
+} from './components/BottleneckPanel'
 import { ChallengePanel } from './components/ChallengePanel'
 import { HistoryPanel, type HistoryAttemptItem } from './components/HistoryPanel'
 import { ReplayPanel } from './components/ReplayPanel'
@@ -22,10 +26,15 @@ import {
   FAULT_LABELS,
   type ComponentHealth,
   type ComponentKind,
+  type CapacityTuning,
   type FaultMode,
   type TelemetryPoint,
   type TimelineEvent,
 } from './domain/system'
+import {
+  DEFAULT_CAPACITY_TUNING,
+  estimateCapacity,
+} from './capacity/model'
 import { interviewRouter } from './interview/router'
 import type { InterviewAction, InterviewContext } from './interview/types'
 import { judgeUrlShortener, type JudgeReport } from './judge'
@@ -120,6 +129,11 @@ export function App() {
   const [tick, setTick] = useState(0)
   const [elapsedSeconds, setElapsedSeconds] = useState(18 * 60 + 42)
   const [interviewerOpen, setInterviewerOpen] = useState(true)
+  const [rightPanelMode, setRightPanelMode] = useState<'interview' | 'bottleneck'>('bottleneck')
+  const [capacity, setCapacity] = useState<CapacityTuning>(DEFAULT_CAPACITY_TUNING)
+  const [bottleneckPrediction, setBottleneckPrediction] = useState<BottleneckPrediction | null>(null)
+  const [predictionRationale, setPredictionRationale] = useState('')
+  const [predictionLocked, setPredictionLocked] = useState(false)
   const [challengeOpen, setChallengeOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [historyNotice, setHistoryNotice] = useState<{
@@ -149,16 +163,17 @@ export function App() {
   const [replaySpeed, setReplaySpeed] = useState(1)
   const draftAttemptRef = useRef<ReplayAttemptV1 | null>(null)
   const recordingElapsedMsRef = useRef(0)
-  const canonicalStateRef = useRef({ nodes, edges, load, fault })
+  const canonicalStateRef = useRef({ nodes, edges, load, fault, capacity })
   const liveStateBeforeReplayRef = useRef<{
     nodes: SystemFlowNode[]
     edges: SystemFlowEdge[]
     load: 1 | 3 | 10
     fault: FaultMode
+    capacity: CapacityTuning
     playing: boolean
   } | null>(null)
 
-  canonicalStateRef.current = { nodes, edges, load, fault }
+  canonicalStateRef.current = { nodes, edges, load, fault, capacity }
 
   // Simulation topology must not be invalidated by the live health/detail fields
   // that we write back into React Flow nodes on every tick.
@@ -185,8 +200,30 @@ export function App() {
         edgeCount: edges.length,
         componentCounts,
         criticalPathConnected,
+        capacity,
       }),
-    [componentCounts, criticalPathConnected, edges.length, fault, load, nodes.length, tick],
+    [capacity, componentCounts, criticalPathConnected, edges.length, fault, load, nodes.length, tick],
+  )
+
+  const capacityReport = useMemo(
+    () => estimateCapacity({
+      loadMultiplier: load,
+      fault,
+      tuning: capacity,
+      componentCounts,
+      criticalPathConnected,
+    }),
+    [capacity, componentCounts, criticalPathConnected, fault, load],
+  )
+  const baselineCapacityReport = useMemo(
+    () => estimateCapacity({
+      loadMultiplier: load,
+      fault,
+      tuning: DEFAULT_CAPACITY_TUNING,
+      componentCounts,
+      criticalPathConnected,
+    }),
+    [componentCounts, criticalPathConnected, fault, load],
   )
 
   const replayFrame = useMemo(
@@ -223,6 +260,7 @@ export function App() {
         loadMultiplier: 10,
         fault: 'cache-outage',
         tick: index - 21,
+        capacity: DEFAULT_CAPACITY_TUNING,
       }).metrics,
     })),
   )
@@ -264,6 +302,7 @@ export function App() {
           canonical.edges,
           canonical.load,
           canonical.fault,
+          canonical.capacity,
         ),
       })
       recordingElapsedMsRef.current = 0
@@ -288,7 +327,7 @@ export function App() {
 
   useEffect(() => {
     setJudgeReport(null)
-  }, [graphTopology])
+  }, [capacity, graphTopology])
 
   useEffect(() => {
     if (replayAttempt || !playing) return
@@ -322,6 +361,7 @@ export function App() {
     const presentation = presentReplayFrame(replayFrame, replayTick, !replayPlaying)
     setLoad(replayFrame.load)
     setFault(replayFrame.fault)
+    setCapacity(replayFrame.capacity ?? DEFAULT_CAPACITY_TUNING)
     setTick(replayTick)
     setNodes(presentation.nodes)
     setEdges(presentation.edges)
@@ -580,13 +620,70 @@ export function App() {
     [addEvent, recordAction],
   )
 
-  const submitDesign = useCallback(() => {
-    const report = judgeUrlShortener({
-      componentCounts,
-      criticalPathConnected,
-      nodeCount: nodes.length,
-      edgeCount: edges.length,
+  const changeCapacity = useCallback((nextCapacity: CapacityTuning) => {
+    setCapacity(nextCapacity)
+    const changedKey = (Object.keys(nextCapacity) as Array<keyof CapacityTuning>)
+      .find((key) => nextCapacity[key] !== capacity[key])
+    const detail = changedKey
+      ? `${changedKey.replace(/([A-Z])/g, ' $1').toLowerCase()} updated`
+      : 'Reference tuning restored'
+    addEvent('Capacity tuning updated', detail, 'neutral')
+    recordAction({
+      type: 'capacity.changed',
+      source: 'user',
+      payload: { capacity: { ...nextCapacity } },
+      timeline: {
+        title: 'Capacity tuning updated',
+        detail,
+        tone: 'neutral',
+      },
     })
+  }, [addEvent, capacity, recordAction])
+
+  const commitPrediction = useCallback(() => {
+    if (!bottleneckPrediction || predictionRationale.trim().length < 8) return
+    setPredictionLocked(true)
+    const matches = bottleneckPrediction === capacityReport.bottleneck
+    addEvent(
+      'Bottleneck prediction committed',
+      matches ? 'Prediction matches the estimated model' : `Model points to ${capacityReport.bottleneck}`,
+      matches ? 'healthy' : 'warning',
+    )
+    recordAction({
+      type: 'answer.submitted',
+      source: 'user',
+      payload: {
+        answer: predictionRationale.trim(),
+        prompt: 'What saturates first at 100k redirects/s during a cache outage?',
+        feedback: matches
+          ? 'The prediction matches the current estimate.'
+          : `The current estimate points to ${capacityReport.bottleneck}.`,
+        focus: `prediction:${bottleneckPrediction}`,
+      },
+      timeline: {
+        title: `Predicted ${bottleneckPrediction.replace('-', ' ')}`,
+        detail: matches ? 'Prediction holds' : 'Counterfactual revealed another limit',
+        tone: matches ? 'healthy' : 'warning',
+      },
+    })
+  }, [
+    addEvent,
+    bottleneckPrediction,
+    capacityReport.bottleneck,
+    predictionRationale,
+    recordAction,
+  ])
+
+  const submitDesign = useCallback(() => {
+    const report = judgeUrlShortener(
+      {
+        componentCounts,
+        criticalPathConnected,
+        nodeCount: nodes.length,
+        edgeCount: edges.length,
+      },
+      { simulate: (input) => computeSimulation({ ...input, capacity }) },
+    )
     setJudgeReport(report)
     addEvent(
       'Design submitted',
@@ -651,6 +748,7 @@ export function App() {
     setDraftAttempt(null)
   }, [
     addEvent,
+    capacity,
     componentCounts,
     criticalPathConnected,
     edges.length,
@@ -670,6 +768,7 @@ export function App() {
         challenge: urlShortenerChallenge.id,
         load,
         fault,
+        capacity,
         nodes: nodes.map((node) => ({
           id: node.id,
           kind: node.data.kind,
@@ -695,7 +794,7 @@ export function App() {
     } catch {
       addEvent('Share unavailable', 'Clipboard access was not granted', 'warning')
     }
-  }, [addEvent, edges, fault, load, nodes, replayAttempt])
+  }, [addEvent, capacity, edges, fault, load, nodes, replayAttempt])
 
   const openHistory = useCallback(() => {
     setChallengeOpen(false)
@@ -713,6 +812,7 @@ export function App() {
         edges: canonicalStateRef.current.edges,
         load: canonicalStateRef.current.load,
         fault: canonicalStateRef.current.fault,
+        capacity: canonicalStateRef.current.capacity,
         playing,
       }
     }
@@ -736,6 +836,7 @@ export function App() {
       setEdges(live.edges)
       setLoad(live.load)
       setFault(live.fault)
+      setCapacity(live.capacity)
       setPlaying(live.playing)
     }
     liveStateBeforeReplayRef.current = null
@@ -865,11 +966,23 @@ export function App() {
     [addEvent, answer, interviewContext, prompt, recordAction],
   )
 
+  const defendCapacity = useCallback(() => {
+    setPrompt(
+      `You chose ${capacity.indexedLookup ? 'an indexed lookup' : 'a scan-prone lookup'}, ` +
+      `${capacity.readReplicas} read replica${capacity.readReplicas === 1 ? '' : 's'}, and a ` +
+      `${capacity.databaseProfile} database. Defend the ${Math.round(capacityReport.cost.total)} USD/month trade-off.`,
+    )
+    setFeedback('Explain which assumption you would benchmark first and what would make you reverse this decision.')
+    setRightPanelMode('interview')
+    setInterviewerOpen(true)
+    addEvent('Design ready to defend', 'Interviewer is challenging the cost and bottleneck assumptions', 'neutral')
+  }, [addEvent, capacity, capacityReport.cost.total])
+
   return (
     <div
       className={`app-shell ${interviewerOpen ? 'interviewer-open' : 'interviewer-closed'} ${
         (replayAttempt ? replayPlaying : playing) ? 'simulation-running' : 'simulation-paused'
-      } ${replayAttempt ? 'replay-mode' : ''}`}
+      } ${replayAttempt ? 'replay-mode' : ''} ${rightPanelMode === 'bottleneck' ? 'bottleneck-mode' : ''}`}
     >
       <TopBar
         elapsedSeconds={replayAttempt ? Math.floor(replayCursorMs / 1000) : elapsedSeconds}
@@ -877,6 +990,11 @@ export function App() {
         onTogglePlaying={() => setPlaying((value) => !value)}
         interviewerOpen={interviewerOpen && !historyOpen && !replayAttempt}
         onToggleInterviewer={() => setInterviewerOpen((value) => !value)}
+        onOpenCapacity={() => {
+          setRightPanelMode('bottleneck')
+          setInterviewerOpen(true)
+        }}
+        capacityActive={rightPanelMode === 'bottleneck' && interviewerOpen}
         onOpenChallenge={() => {
           if (!replayAttempt) setChallengeOpen(true)
         }}
@@ -900,7 +1018,13 @@ export function App() {
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
           onAddNode={addNode}
-          onNodeKindSelected={setActiveKind}
+          onNodeKindSelected={(kind) => {
+            setActiveKind(kind)
+            if (kind === 'database' || kind === 'cache') {
+              setRightPanelMode('bottleneck')
+              setInterviewerOpen(true)
+            }
+          }}
           onLoadChange={changeLoad}
           onFaultChange={changeFault}
           readOnly={Boolean(replayAttempt)}
@@ -927,7 +1051,7 @@ export function App() {
             />
           ) : undefined}
         />
-        {!historyOpen && !replayAttempt && <InterviewerPanel
+        {!historyOpen && !replayAttempt && rightPanelMode === 'interview' && <InterviewerPanel
           open={interviewerOpen}
           providerLabel="Local preview"
           prompt={prompt}
@@ -940,8 +1064,28 @@ export function App() {
           onHint={() => void runInterviewAction('hint')}
           onReview={() => void runInterviewAction('review')}
           onContinue={() => void runInterviewAction('continue')}
+          onOpenCapacity={() => setRightPanelMode('bottleneck')}
           onClose={() => setInterviewerOpen((value) => !value)}
         />}
+        {!historyOpen && !replayAttempt && rightPanelMode === 'bottleneck' && (
+          <BottleneckPanel
+            open={interviewerOpen}
+            tuning={capacity}
+            report={capacityReport}
+            baseline={baselineCapacityReport}
+            prediction={bottleneckPrediction}
+            rationale={predictionRationale}
+            predictionLocked={predictionLocked}
+            onPredictionChange={setBottleneckPrediction}
+            onRationaleChange={setPredictionRationale}
+            onCommitPrediction={commitPrediction}
+            onTuningChange={changeCapacity}
+            onDefend={defendCapacity}
+            onReset={() => changeCapacity({ ...DEFAULT_CAPACITY_TUNING })}
+            onOpenInterviewer={() => setRightPanelMode('interview')}
+            onClose={() => setInterviewerOpen((value) => !value)}
+          />
+        )}
         {historyOpen && (
           <HistoryPanel
             open

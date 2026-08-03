@@ -17,6 +17,7 @@ export {
   type ReplayEventMetadataV1,
   type ReplayEventSource,
   type ReplayEventV1,
+  type ReplayCapacityChangedEventV1,
   type ReplayFaultChangedEventV1,
   type ReplayInitialStateV1,
   type ReplayKeyMomentV1,

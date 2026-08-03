@@ -211,4 +211,40 @@ describe('computeSimulation', () => {
     expect(disconnected.nodeDetails.service).toBe('No route')
     expect(disconnected.nodeDetails.gateway).toBe('Route degraded')
   })
+
+  it('applies candidate capacity decisions to the live failure metrics', () => {
+    const baseline = computeSimulation({
+      loadMultiplier: 10,
+      fault: 'cache-outage',
+      tick: 0,
+      componentCounts: { service: 1, cache: 1, database: 1 },
+      criticalPathConnected: true,
+      capacity: {
+        cacheHitRate: 0.9,
+        indexedLookup: false,
+        poolSize: 100,
+        readReplicas: 0,
+        databaseProfile: 'balanced',
+      },
+    })
+    const tuned = computeSimulation({
+      loadMultiplier: 10,
+      fault: 'cache-outage',
+      tick: 0,
+      componentCounts: { service: 1, cache: 1, database: 1 },
+      criticalPathConnected: true,
+      capacity: {
+        cacheHitRate: 0.99,
+        indexedLookup: true,
+        poolSize: 600,
+        readReplicas: 2,
+        databaseProfile: 'performance',
+      },
+    })
+
+    expect(tuned.metrics.p99).toBeLessThan(baseline.metrics.p99)
+    expect(tuned.metrics.dbCpu).toBeLessThan(baseline.metrics.dbCpu)
+    expect(tuned.metrics.throughput).toBeGreaterThan(baseline.metrics.throughput)
+    expect(tuned.capacity?.cost.total).toBeGreaterThan(baseline.capacity?.cost.total ?? 0)
+  })
 })

@@ -1,4 +1,4 @@
-import { ChevronDown, History, LogOut, PanelRightClose, Pause, Play, Share2 } from 'lucide-react'
+import { ChevronDown, Gauge, History, LogOut, PanelRightClose, Pause, Play, Share2 } from 'lucide-react'
 import { FaultlineMark } from './FaultlineMark'
 
 interface TopBarProps {
@@ -7,6 +7,8 @@ interface TopBarProps {
   onTogglePlaying: () => void
   interviewerOpen: boolean
   onToggleInterviewer: () => void
+  onOpenCapacity: () => void
+  capacityActive?: boolean
   onOpenChallenge: () => void
   onOpenHistory: () => void
   onShare: () => void
@@ -28,6 +30,8 @@ export function TopBar({
   onTogglePlaying,
   interviewerOpen,
   onToggleInterviewer,
+  onOpenCapacity,
+  capacityActive = false,
   onOpenChallenge,
   onOpenHistory,
   onShare,
@@ -71,6 +75,15 @@ export function TopBar({
         >
           <Share2 size={19} />
         </button>
+        {!replayMode && <button
+          type="button"
+          aria-label="Open bottleneck defense"
+          title="Bottleneck Defense"
+          className={`icon-button desktop-only ${capacityActive ? 'is-active' : ''}`}
+          onClick={onOpenCapacity}
+        >
+          <Gauge size={19} />
+        </button>}
         {!replayMode && <button
           type="button"
           aria-label={interviewerOpen ? 'Hide interviewer' : 'Show interviewer'}

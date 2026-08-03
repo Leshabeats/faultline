@@ -5,6 +5,7 @@ import type {
   SimulationMetrics,
   SimulationSnapshot,
 } from '../domain/system'
+import { DEFAULT_CAPACITY_TUNING, estimateCapacity } from '../capacity/model'
 
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value))
@@ -143,6 +144,31 @@ export function computeSimulation(input: SimulationInput): SimulationSnapshot {
     }
   }
 
+  const capacity = estimateCapacity({
+    loadMultiplier: load,
+    fault,
+    tuning: input.capacity ?? DEFAULT_CAPACITY_TUNING,
+    componentCounts: input.componentCounts,
+    criticalPathConnected: true,
+  })
+
+  if (input.capacity) {
+    metrics = { ...capacity.metrics }
+    nodeHealth.database = metrics.dbCpu >= 80 ? 'hot' : 'healthy'
+    nodeHealth.service =
+      capacity.utilization.service > 1 || metrics.p99 >= 250
+        ? 'degraded'
+        : 'healthy'
+    nodeHealth.queue = metrics.queueDepth >= 2_000 ? 'backlog' : 'healthy'
+    if (fault === 'cache-outage') {
+      const cacheReplicas = Math.max(1, input.componentCounts?.cache ?? 1)
+      nodeHealth.cache = cacheReplicas > 1 ? 'degraded' : 'failed'
+    } else {
+      nodeHealth.cache = 'healthy'
+    }
+    if (fault === 'network-partition') nodeHealth.gateway = 'failed'
+  }
+
   if (input.criticalPathConnected === false) {
     metrics.throughput *= 0.12
     metrics.p99 = Math.max(metrics.p99, 1_500)
@@ -199,7 +225,13 @@ export function computeSimulation(input: SimulationInput): SimulationSnapshot {
         ? 'degraded'
         : 'normal'
 
-  return { metrics, nodeHealth, nodeDetails, severity }
+  return {
+    metrics,
+    nodeHealth,
+    nodeDetails,
+    severity,
+    capacity: { ...capacity, metrics: { ...metrics } },
+  }
 }
 
 export function formatMetric(value: number, kind: keyof SimulationMetrics) {

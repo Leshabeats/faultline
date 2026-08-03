@@ -1,5 +1,6 @@
 import { urlShortenerChallenge } from '../challenges/urlShortener'
 import { judgeUrlShortener } from '../judge'
+import { computeSimulation } from '../simulation/engine'
 import { analyzeTopology } from '../simulation/topology'
 import { presentReplayFrame } from './presentation'
 import { playReplayAt } from './reducer'
@@ -21,12 +22,20 @@ export function verifyImportedUrlShortenerAttempt(
   const finalFrame = playReplayAt(attempt, attempt.durationMs)
   const presented = presentReplayFrame(finalFrame, Math.floor(attempt.durationMs / 900), true)
   const topology = analyzeTopology(presented.nodes, presented.edges)
-  const report = judgeUrlShortener({
-    componentCounts: topology.componentCounts,
-    criticalPathConnected: topology.criticalPathConnected,
-    nodeCount: presented.nodes.length,
-    edgeCount: presented.edges.length,
-  })
+  const report = judgeUrlShortener(
+    {
+      componentCounts: topology.componentCounts,
+      criticalPathConnected: topology.criticalPathConnected,
+      nodeCount: presented.nodes.length,
+      edgeCount: presented.edges.length,
+    },
+    {
+      simulate: (input) => computeSimulation({
+        ...input,
+        capacity: finalFrame.capacity,
+      }),
+    },
+  )
   const submission = {
     judgeVersion: report.judgeVersion,
     score: report.score,
