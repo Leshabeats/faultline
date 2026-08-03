@@ -260,6 +260,81 @@ button:disabled {
   background: rgba(103, 117, 132, 0.075);
 }
 
+.document-menu {
+  position: absolute;
+  left: clamp(210px, 19.5vw, 316px);
+  z-index: 90;
+}
+
+.document-menu .document-title {
+  position: static;
+}
+
+.challenge-menu {
+  width: 272px;
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  padding: 7px;
+  border: 1px solid rgba(140, 153, 166, 0.2);
+  border-radius: 15px;
+  background: rgba(252, 253, 254, 0.96);
+  box-shadow: 0 18px 50px rgba(35, 47, 61, 0.15);
+  backdrop-filter: blur(20px) saturate(1.2);
+}
+
+.challenge-menu > span {
+  display: block;
+  padding: 7px 9px 6px;
+  color: var(--ink-tertiary);
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.challenge-menu > button {
+  width: 100%;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 9px;
+  border-radius: 10px;
+  text-align: left;
+}
+
+.challenge-menu > button:hover,
+.challenge-menu > button.is-selected {
+  background: rgba(103, 117, 132, 0.07);
+}
+
+.challenge-menu > button > span {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.challenge-menu strong {
+  font-size: 12px;
+  font-weight: 570;
+}
+
+.challenge-menu small {
+  color: var(--ink-tertiary);
+  font-size: 9px;
+}
+
+.challenge-menu .challenge-brief-action {
+  min-height: 34px;
+  margin-top: 4px;
+  border-top: 1px solid var(--line-soft);
+  border-radius: 0 0 9px 9px;
+  color: var(--blue);
+  font-size: 10px;
+  justify-content: flex-start;
+}
+
 .interview-timer {
   grid-column: 2;
   display: inline-flex;
@@ -1206,6 +1281,33 @@ button:disabled {
   background: rgba(252, 253, 254, 0.97);
 }
 
+.fanout-panel .defense-heading > svg {
+  color: #af52de;
+  animation: celebrity-pulse 1.9s ease-in-out infinite;
+}
+
+.fanout-panel .prediction-options button.is-selected {
+  border-color: rgba(175, 82, 222, 0.42);
+  background: rgba(175, 82, 222, 0.055);
+  box-shadow: 0 0 0 3px rgba(175, 82, 222, 0.045);
+}
+
+.fanout-panel .prediction-options button.is-selected > i {
+  border-color: #af52de;
+  background: #af52de;
+}
+
+.celebrity-outcome {
+  background:
+    radial-gradient(circle at 90% 0%, rgba(175, 82, 222, 0.08), transparent 42%),
+    rgba(255, 255, 255, 0.76);
+}
+
+@keyframes celebrity-pulse {
+  0%, 100% { transform: scale(1); filter: drop-shadow(0 0 0 rgba(175, 82, 222, 0)); }
+  50% { transform: scale(1.08); filter: drop-shadow(0 0 7px rgba(175, 82, 222, 0.22)); }
+}
+
 .bottleneck-body {
   padding-top: 0;
 }
@@ -2037,6 +2139,10 @@ button:disabled {
     left: 66px;
   }
 
+  .document-menu {
+    left: 66px;
+  }
+
   .component-dock {
     left: 15px;
   }
@@ -2098,6 +2204,22 @@ button:disabled {
     overflow: hidden;
     font-size: 15px;
     text-overflow: ellipsis;
+  }
+
+  .document-menu {
+    min-width: 0;
+    position: relative;
+    left: auto;
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .document-menu .document-title {
+    max-width: 46vw;
+  }
+
+  .challenge-menu {
+    width: min(272px, calc(100vw - 32px));
   }
 
   .document-title svg {
@@ -2493,6 +2615,10 @@ button:disabled {
     font-size: 13px;
   }
 
+  .document-menu .document-title {
+    max-width: 41vw;
+  }
+
   .interview-timer {
     font-size: 11px;
   }
@@ -2552,6 +2678,10 @@ button:disabled {
     position: absolute;
     padding-block: 6px;
     font-size: 14px;
+  }
+
+  .document-menu {
+    left: 176px;
   }
 
   .interview-timer {

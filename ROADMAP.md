@@ -25,7 +25,15 @@ Faultline is intentionally shipping as a narrow, playable vertical slice before 
 - Versioned, bounded, fail-closed benchmark-pack validation.
 - Cache saturation driven by the selected capacity pack.
 
-## v0.3.2 — Replay and sharing polish
+## v0.3.2 — Challenge Packs + Celebrity Spike — shipped
+
+- Introduce a reusable challenge-pack contract for manifests, seed graphs, faults, labels, and tuning defaults.
+- Add **The Celebrity Problem**, a News Feed challenge with animated fan-out pressure and a 50M-follower spike.
+- Practice write, read, and hybrid fan-out; tune workers, batching, celebrity thresholds, and idempotent delivery.
+- Run three public and two redacted hidden cases through a deterministic News Feed judge.
+- Replay both challenge types while keeping pre-v0.3.2 URL Shortener envelopes valid.
+
+## v0.3.3 — Replay and sharing polish
 
 - Public URL share links once the Go service exists.
 - More explicit per-node fault targeting.

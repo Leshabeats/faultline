@@ -10,13 +10,13 @@
 
 Faultline is a LeetCode-style practice environment for system design. Open a challenge, draw an architecture as the submission, run traffic and failure cases against it, and explain the trade-offs while an interviewer reacts to the live state.
 
-The first release is intentionally focused on one coherent URL-shortener scenario rather than pretending to model every distributed system.
+The current release has two coherent challenge packs: a calibrated URL Shortener and **The Celebrity Problem**, a News Feed fan-out exercise built around a 50-million-follower spike.
 
 ## Practice loop
 
 1. Read the challenge and capacity requirements.
 2. Predict the first bottleneck and commit the reasoning before seeing the model.
-3. Build a topology, tune the read path, and watch latency, saturation, and estimated cost move together.
+3. Build a topology, tune the read or fan-out path, and watch latency, freshness, saturation, and estimated cost move together.
 4. Defend the trade-off when the interviewer challenges the assumptions.
 5. Submit against the complete deterministic judge, including redacted hidden cases.
 6. Replay the exact architecture, capacity choices, load, fault, reasoning, and submission sequence.
@@ -31,14 +31,17 @@ The launch topology scores `76/100`. Connecting a complete second cache path mak
 
 - Interactive system canvas with draggable, connectable components built on React Flow.
 - A URL Shortener challenge statement with requirements, scale, three public cases, and two redacted hidden cases.
+- The Celebrity Problem: a News Feed challenge with normal traffic, a 50M-follower spike, worker outage, hot-key, and duplicate-delivery cases.
+- A reusable challenge-pack registry that switches the seed graph, fault controls, telemetry language, tuning surface, judge, and replay presentation together.
 - A deterministic local judge: submit the current topology, see per-case pass/fail, a 0–100 score, four-dimension breakdown, then improve the diagram and run again.
 - Stateful, animated icons for clients, gateways, services, caches, queues, databases, and regions.
 - Live traffic animation and telemetry for throughput, p99 latency, errors, database CPU, cache misses, and queue depth.
 - Bottleneck Defense: prediction-before-feedback, cache/index/pool/replica/database tuning, and a live baseline comparison.
+- Celebrity Defense: predict the first fan-out limit, then compare write/read/hybrid fan-out, worker count, batching, celebrity thresholds, and idempotent delivery.
 - A versioned estimated cost model with monthly cost, cost per million redirects, workload math, storage footprint, and disclosed assumptions.
 - Separate calibration controls for verified AWS `us-east-1` unit rates and capacity evidence, so a provider price is never presented as measured throughput.
 - A reproducible local benchmark pack with real `pgbench` and `redis-benchmark` results, plus strict validation for the public pack format.
-- Deterministic load controls (`1x`, `3x`, `10x`) and four fault injections: cache outage, slow database, network partition, and retry storm.
+- Deterministic load controls (`1x`, `3x`, `10x`) and challenge-specific fault injection menus.
 - A local interviewer with follow-up questions, hints, design review, and answer feedback informed by the current diagram and simulation metrics.
 - Semantic attempt recording for load, fault, topology, capacity tuning, interviewer-answer, and submission actions without storing derived animation noise.
 - Local attempt history with deterministic play/pause, scrub, previous/next event controls, `0.5x`/`1x`/`2x` speed, and synchronized metrics.
@@ -127,11 +130,12 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Product d
 src/
   challenges/   Challenge manifests, requirements, cases, and rubrics
   canvas/       React Flow nodes, edges, types, and launch scenario
-  capacity/     Workload, bottleneck, calibration packs, and cost model
+  capacity/     URL-shortener workload, bottleneck, calibration packs, and cost model
   components/   Product chrome, controls, telemetry, and animated icons
   domain/       Shared system-design and simulation contracts
   interview/    Provider interface, router, local interviewer, and tests
   judge/         Deterministic public/hidden suite, redaction, scoring, and tests
+  newsFeed/      Celebrity workload, fan-out, freshness, backlog, and cost model
   replay/        Versioned semantic log, reducer, import/export, repository, and tests
   simulation/   Deterministic engine, topology analysis, and tests
   App.tsx       Canvas orchestration and end-to-end interaction state

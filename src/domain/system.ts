@@ -20,6 +20,12 @@ export type FaultMode =
   | 'slow-database'
   | 'network-partition'
   | 'retry-storm'
+  | 'celebrity-spike'
+  | 'worker-outage'
+  | 'hot-key'
+  | 'duplicate-delivery'
+
+export type ScenarioId = 'url-shortener' | 'news-feed'
 
 export interface SystemNodeData extends Record<string, unknown> {
   kind: ComponentKind
@@ -52,6 +58,10 @@ export type ConnectionPoolSize = 100 | 300 | 600
 export type ReadReplicaCount = 0 | 1 | 2
 export type PricingPackId = 'reference-2026.08' | 'aws-us-east-1-2026.07'
 export type BenchmarkPackId = 'reference-2026.08' | 'local-m1-pro-2026.08'
+export type FanoutStrategy = 'write' | 'read' | 'hybrid'
+export type FanoutWorkerCount = 4 | 16 | 64
+export type FanoutBatchSize = 100 | 500 | 2000
+export type CelebrityThreshold = 100_000 | 1_000_000 | 10_000_000
 
 export interface CapacityTuning {
   cacheHitRate: CacheHitRate
@@ -63,6 +73,47 @@ export interface CapacityTuning {
   pricingPackId?: PricingPackId
   /** Optional so replay envelopes recorded before v0.3.1 remain valid. */
   benchmarkPackId?: BenchmarkPackId
+  /** Optional so URL-shortener and pre-v0.3.2 replay envelopes stay valid. */
+  fanoutStrategy?: FanoutStrategy
+  fanoutWorkers?: FanoutWorkerCount
+  fanoutBatchSize?: FanoutBatchSize
+  celebrityThreshold?: CelebrityThreshold
+  deduplication?: boolean
+}
+
+export type NewsFeedBottleneck =
+  | 'fanout-queue'
+  | 'workers'
+  | 'timeline-cache'
+  | 'post-store'
+
+export interface NewsFeedReport {
+  modelVersion: 'celebrity-2026.08'
+  modelStatus: 'estimated'
+  workload: {
+    postsPerSecond: number
+    readsPerSecond: number
+    fanoutJobsPerSecond: number
+    celebrityFollowers: number
+  }
+  utilization: {
+    workers: number
+    queue: number
+    cache: number
+    postStore: number
+  }
+  metrics: SimulationMetrics
+  cost: {
+    workers: number
+    queue: number
+    cache: number
+    postStore: number
+    total: number
+  }
+  duplicateRate: number
+  bottleneck: NewsFeedBottleneck
+  status: 'within-envelope' | 'at-risk' | 'saturated'
+  assumptions: string[]
 }
 
 export type BottleneckKind =
@@ -121,6 +172,7 @@ export interface CapacityReport {
 }
 
 export interface SimulationInput {
+  scenario?: ScenarioId
   loadMultiplier: 1 | 3 | 10
   fault: FaultMode
   tick: number
@@ -159,4 +211,8 @@ export const FAULT_LABELS: Record<FaultMode, string> = {
   'slow-database': 'Slow database',
   'network-partition': 'Network partition',
   'retry-storm': 'Retry storm',
+  'celebrity-spike': 'Celebrity spike',
+  'worker-outage': 'Worker outage',
+  'hot-key': 'Hot key',
+  'duplicate-delivery': 'Duplicate delivery',
 }

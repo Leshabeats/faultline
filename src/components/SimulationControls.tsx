@@ -15,15 +15,8 @@ interface SimulationControlsProps {
   onLoadChange: (load: 1 | 3 | 10) => void
   onFaultChange: (fault: FaultMode) => void
   onQuickAdd: (kind: ComponentKind) => void
+  faults: readonly FaultMode[]
 }
-
-const faults: FaultMode[] = [
-  'none',
-  'cache-outage',
-  'slow-database',
-  'network-partition',
-  'retry-storm',
-]
 
 export function SimulationControls({
   load,
@@ -31,6 +24,7 @@ export function SimulationControls({
   onLoadChange,
   onFaultChange,
   onQuickAdd,
+  faults,
 }: SimulationControlsProps) {
   const [faultMenuOpen, setFaultMenuOpen] = useState(false)
   const [componentMenuOpen, setComponentMenuOpen] = useState(false)

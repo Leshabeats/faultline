@@ -6,6 +6,7 @@ import type {
   SimulationSnapshot,
 } from '../domain/system'
 import { DEFAULT_CAPACITY_TUNING, estimateCapacity } from '../capacity/model'
+import { estimateNewsFeed } from '../newsFeed/model'
 
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value))
@@ -25,7 +26,7 @@ const withMotion = (
   return {
     throughput: Math.max(0, round(metrics.throughput * (1 + wave * 0.008))),
     p99: Math.max(1, round(metrics.p99 + counterWave * metrics.p99 * 0.018)),
-    errorRate: Math.max(0, round(metrics.errorRate + wave * 0.18, 1)),
+    errorRate: clamp(round(metrics.errorRate + wave * 0.18, 1), 0, 100),
     dbCpu: clamp(round(metrics.dbCpu + counterWave * 0.7), 0, 100),
     cacheMiss: clamp(round(metrics.cacheMiss + wave * 0.35, 1), 0, 100),
     queueDepth: Math.max(0, round(metrics.queueDepth * (1 + counterWave * 0.025))),
@@ -41,7 +42,7 @@ const baseMetrics = (load: 1 | 3 | 10): SimulationMetrics => ({
   queueDepth: round(220 * load),
 })
 
-export function computeSimulation(input: SimulationInput): SimulationSnapshot {
+function computeUrlShortenerSimulation(input: SimulationInput): SimulationSnapshot {
   const { loadMultiplier: load, fault, tick } = input
   const baseline = baseMetrics(load)
   let metrics: SimulationMetrics = { ...baseline }
@@ -238,13 +239,76 @@ export function computeSimulation(input: SimulationInput): SimulationSnapshot {
   }
 }
 
+function computeNewsFeedSimulation(input: SimulationInput): SimulationSnapshot {
+  const report = estimateNewsFeed({
+    loadMultiplier: input.loadMultiplier,
+    fault: input.fault,
+    tuning: input.capacity,
+    componentCounts: input.componentCounts,
+    criticalPathConnected: input.criticalPathConnected,
+  })
+  const metrics = withMotion(report.metrics, input.tick)
+  const nodeHealth: Partial<Record<ComponentKind, ComponentHealth>> = {
+    client: 'healthy',
+    gateway: input.criticalPathConnected === false ? 'degraded' : 'healthy',
+    service: report.utilization.workers >= 1
+      ? input.fault === 'worker-outage' ? 'failed' : 'degraded'
+      : 'healthy',
+    queue: report.metrics.queueDepth > 0 ? 'backlog' : 'healthy',
+    cache: report.utilization.cache >= 1 ? 'hot' : 'healthy',
+    database: report.utilization.postStore >= 1 ? 'hot' : 'healthy',
+    region: 'healthy',
+  }
+  if (input.fault === 'hot-key') nodeHealth.cache = 'hot'
+  if (input.fault === 'duplicate-delivery') nodeHealth.queue = 'degraded'
+
+  const tuning = input.capacity
+  const strategy = tuning?.fanoutStrategy ?? 'write'
+  const nodeDetails: Partial<Record<ComponentKind, string>> = {
+    client: `${round(report.workload.readsPerSecond / 1000)}k reads/s`,
+    gateway: input.criticalPathConnected === false ? 'Route degraded' : `${strategy} fan-out`,
+    service: input.fault === 'worker-outage'
+      ? 'Half fleet down'
+      : report.utilization.workers >= 10
+        ? `${round(report.utilization.workers, 1)}× demand`
+        : `${Math.round(report.utilization.workers * 100)}% busy`,
+    queue: report.metrics.queueDepth > 0
+      ? `${formatMetric(report.metrics.queueDepth, 'queueDepth')} backlog`
+      : 'Draining',
+    cache: input.fault === 'hot-key'
+      ? 'Celebrity hot key'
+      : `${Math.round(report.utilization.cache * 100)}% load`,
+    database: `${Math.round(report.utilization.postStore * 100)}% load`,
+    region: 'Connected',
+  }
+  const severity = report.status === 'saturated'
+    ? 'critical'
+    : report.status === 'at-risk'
+      ? 'degraded'
+      : 'normal'
+
+  return { metrics, nodeHealth, nodeDetails, severity }
+}
+
+export function computeSimulation(input: SimulationInput): SimulationSnapshot {
+  return input.scenario === 'news-feed'
+    ? computeNewsFeedSimulation(input)
+    : computeUrlShortenerSimulation(input)
+}
+
 export function formatMetric(value: number, kind: keyof SimulationMetrics) {
   if (kind === 'throughput') {
+    if (value >= 1_000_000_000) return `${round(value / 1_000_000_000, 1)}B`
+    if (value >= 1_000_000) return `${round(value / 1_000_000, 1)}M`
     return value >= 1000 ? `${round(value / 1000)}k` : `${value}`
   }
-  if (kind === 'p99') return `${round(value)} ms`
+  if (kind === 'p99') return value >= 10_000
+    ? `${round(value / 1000, 1)} s`
+    : `${round(value)} ms`
   if (kind === 'errorRate' || kind === 'dbCpu' || kind === 'cacheMiss') {
     return `${round(value, kind === 'errorRate' ? 1 : 0)}%`
   }
+  if (value >= 1_000_000_000) return `${round(value / 1_000_000_000, 1)}B`
+  if (value >= 1_000_000) return `${round(value / 1_000_000, 1)}M`
   return value >= 1000 ? `${round(value / 1000, 1)}k` : `${round(value)}`
 }

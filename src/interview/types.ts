@@ -1,13 +1,14 @@
 import type {
   FaultMode,
   SimulationMetrics,
+  ScenarioId,
   TimelineEvent,
 } from '../domain/system'
 
 export type InterviewAction = 'continue' | 'hint' | 'review' | 'answer'
 
 export interface InterviewContext {
-  scenario: 'url-shortener'
+  scenario: ScenarioId
   loadMultiplier: 1 | 3 | 10
   fault: FaultMode
   metrics: SimulationMetrics

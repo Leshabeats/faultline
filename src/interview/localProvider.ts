@@ -9,7 +9,23 @@ const containsAny = (value: string, terms: string[]) =>
   terms.some((term) => value.toLowerCase().includes(term))
 
 const questionFor = (request: InterviewRequest) => {
-  const { fault, loadMultiplier, metrics } = request.context
+  const { scenario, fault, loadMultiplier, metrics } = request.context
+
+  if (scenario === 'news-feed') {
+    if (fault === 'celebrity-spike') {
+      return 'One post targets 50 million timelines. Which accounts fan out on write, on read, or through a hybrid path—and why?'
+    }
+    if (fault === 'worker-outage') {
+      return `Half the fan-out fleet is down and freshness p99 is ${Math.round(metrics.p99)} ms. Where does backpressure live?`
+    }
+    if (fault === 'hot-key') {
+      return 'A celebrity timeline key is hot. How do you shard, replicate, or bypass it without losing ordering?'
+    }
+    if (fault === 'duplicate-delivery') {
+      return 'The queue redelivers a batch. Where is the idempotency key stored, and what is its retention window?'
+    }
+    return 'Walk me through publish-to-home-timeline, including the consistency and freshness contract.'
+  }
 
   if (fault === 'cache-outage') {
     return 'Redis is unavailable. How would you protect the database from a cache stampede?'
@@ -39,7 +55,9 @@ export class LocalInterviewProvider implements InterviewProvider {
 
     if (request.action === 'hint') {
       const message =
-        fault === 'cache-outage'
+        request.context.scenario === 'news-feed'
+          ? 'Separate durable publish from timeline materialization. Compare fan-out work per post, read amplification, queue lag, and idempotency.'
+          : fault === 'cache-outage'
           ? 'Think in layers: request coalescing, stale reads, bounded concurrency, and jittered retries. State which layer owns each protection.'
           : fault === 'retry-storm'
             ? 'Look for a feedback loop: timeout → retry → more load → longer timeout. Break it with budgets, jitter, and load shedding.'
@@ -75,6 +93,11 @@ export class LocalInterviewProvider implements InterviewProvider {
         'circuit',
         'jitter',
         'shed',
+        'fan-out',
+        'fanout',
+        'idempoten',
+        'dedup',
+        'hybrid',
       ])
       const hasTradeoff = containsAny(answer, [
         'tradeoff',

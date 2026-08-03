@@ -54,6 +54,31 @@ describe('replay serialization', () => {
     expect(parsed.value.attempt.initial.capacity).toEqual(attempt.initial.capacity)
   })
 
+  it('round-trips the optional news-feed tuning without changing the v1 envelope', () => {
+    const attempt = createCompletedTestAttempt()
+    attempt.challengeId = 'news-feed'
+    attempt.initial.fault = 'celebrity-spike'
+    attempt.initial.capacity = {
+      cacheHitRate: 0.9,
+      indexedLookup: false,
+      poolSize: 100,
+      readReplicas: 0,
+      databaseProfile: 'balanced',
+      fanoutStrategy: 'hybrid',
+      fanoutWorkers: 64,
+      fanoutBatchSize: 2000,
+      celebrityThreshold: 1_000_000,
+      deduplication: true,
+    }
+    const parsed = parseReplayEnvelope(serializeReplayEnvelope(attempt))
+
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+    expect(parsed.value.version).toBe(1)
+    expect(parsed.value.attempt.challengeId).toBe('news-feed')
+    expect(parsed.value.attempt.initial.capacity).toEqual(attempt.initial.capacity)
+  })
+
   it('can redact interview content for a public share without mutating local history', () => {
     const envelope = createReplayEnvelope(createCompletedTestAttempt())
     const serialized = serializeReplayEnvelope(envelope, { redactAnswers: true })

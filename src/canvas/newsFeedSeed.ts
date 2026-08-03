@@ -1,0 +1,103 @@
+import type { SystemFlowEdge, SystemFlowNode } from './types'
+
+export const newsFeedSeedNodes: SystemFlowNode[] = [
+  {
+    id: 'feed-users',
+    type: 'system',
+    position: { x: 10, y: 230 },
+    data: { kind: 'client', label: 'Users', health: 'healthy', detail: '30k reads/s', load: 10 },
+  },
+  {
+    id: 'feed-api',
+    type: 'system',
+    position: { x: 215, y: 230 },
+    data: { kind: 'gateway', label: 'Feed API', health: 'healthy', detail: 'Live', load: 10 },
+  },
+  {
+    id: 'post-store',
+    type: 'system',
+    position: { x: 430, y: 80 },
+    data: { kind: 'database', label: 'Post Store', health: 'healthy', detail: '42% load', load: 10 },
+  },
+  {
+    id: 'fanout-queue',
+    type: 'system',
+    position: { x: 430, y: 390 },
+    selected: true,
+    data: { kind: 'queue', label: 'Fan-out Queue', health: 'backlog', detail: '50M backlog', load: 10 },
+  },
+  {
+    id: 'fanout-workers',
+    type: 'system',
+    position: { x: 655, y: 390 },
+    data: { kind: 'service', label: 'Workers', health: 'degraded', detail: 'Saturated', load: 10 },
+  },
+  {
+    id: 'timeline-cache',
+    type: 'system',
+    position: { x: 875, y: 230 },
+    data: { kind: 'cache', label: 'Timeline Cache', health: 'hot', detail: 'Hot key', load: 10 },
+  },
+]
+
+export const newsFeedSeedEdges: SystemFlowEdge[] = [
+  {
+    id: 'feed-users-api',
+    type: 'traffic',
+    source: 'feed-users',
+    target: 'feed-api',
+    sourceHandle: 'right',
+    targetHandle: 'left',
+    label: '300k reads/s',
+    data: { tone: 'healthy', intensity: 10, paused: false },
+  },
+  {
+    id: 'feed-api-store',
+    type: 'traffic',
+    source: 'feed-api',
+    target: 'post-store',
+    sourceHandle: 'right',
+    targetHandle: 'left',
+    label: '20k posts/s',
+    data: { tone: 'healthy', intensity: 3, paused: false },
+  },
+  {
+    id: 'feed-api-queue',
+    type: 'traffic',
+    source: 'feed-api',
+    target: 'fanout-queue',
+    sourceHandle: 'right',
+    targetHandle: 'left',
+    label: '50M fan-out',
+    data: { tone: 'critical', intensity: 10, paused: false },
+  },
+  {
+    id: 'feed-queue-workers',
+    type: 'traffic',
+    source: 'fanout-queue',
+    target: 'fanout-workers',
+    sourceHandle: 'right',
+    targetHandle: 'left',
+    data: { tone: 'critical', intensity: 10, paused: false },
+  },
+  {
+    id: 'feed-workers-cache',
+    type: 'traffic',
+    source: 'fanout-workers',
+    target: 'timeline-cache',
+    sourceHandle: 'right',
+    targetHandle: 'left',
+    label: 'delivery stream',
+    data: { tone: 'warning', intensity: 10, paused: false },
+  },
+  {
+    id: 'feed-cache-store',
+    type: 'traffic',
+    source: 'timeline-cache',
+    target: 'post-store',
+    sourceHandle: 'bottom',
+    targetHandle: 'top',
+    label: 'read repair',
+    data: { tone: 'healthy', intensity: 3, paused: false },
+  },
+]

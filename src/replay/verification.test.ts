@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { createCompletedTestAttempt, createTestAttempt } from './testFixtures'
-import { verifyImportedUrlShortenerAttempt } from './verification'
+import { newsFeedSeedEdges, newsFeedSeedNodes } from '../canvas/newsFeedSeed'
+import { DEFAULT_NEWS_FEED_TUNING } from '../newsFeed/model'
+import { createReplayAttempt, recordReplayEvent } from './recorder'
+import { toReplayEdge, toReplayNode } from './presentation'
+import { verifyImportedAttempt, verifyImportedUrlShortenerAttempt } from './verification'
 
 describe('imported replay verification', () => {
   it('replaces forged result fields with the current deterministic judge result', () => {
@@ -26,5 +30,45 @@ describe('imported replay verification', () => {
     attempt.summary = { score: 100, maxScore: 100, passed: true }
 
     expect(verifyImportedUrlShortenerAttempt(attempt).summary).toBeUndefined()
+  })
+
+  it('re-judges a news-feed replay with the news-feed suite', () => {
+    let attempt = createReplayAttempt({
+      id: 'feed-attempt',
+      challengeId: 'news-feed',
+      startedAt: '2026-08-03T10:00:00.000Z',
+      initial: {
+        architecture: {
+          nodes: newsFeedSeedNodes.map(toReplayNode),
+          edges: newsFeedSeedEdges.map(toReplayEdge),
+        },
+        load: 10,
+        fault: 'celebrity-spike',
+        capacity: DEFAULT_NEWS_FEED_TUNING,
+      },
+    })
+    attempt = recordReplayEvent(attempt, {
+      id: 'feed-submit',
+      atMs: 0,
+      source: 'user',
+      type: 'design.submitted',
+      payload: {
+        submission: {
+          judgeVersion: 'forged',
+          score: 100,
+          maxScore: 100,
+          passed: true,
+          passedCases: 5,
+          totalCases: 5,
+        },
+      },
+    })
+
+    const verified = verifyImportedAttempt(attempt)
+    const submission = verified.events.find((event) => event.type === 'design.submitted')
+    expect(submission?.type === 'design.submitted'
+      ? submission.payload.submission.judgeVersion
+      : undefined).toBe('news-feed-v1')
+    expect(verified.summary?.score).toBeLessThan(100)
   })
 })

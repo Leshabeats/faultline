@@ -40,6 +40,9 @@ interface ArchitectureCanvasProps {
   readOnly?: boolean
   bottomOverlay?: ReactNode
   fitViewKey?: string
+  faults: readonly FaultMode[]
+  telemetryLabels?: Partial<Record<'throughput' | 'p99' | 'errorRate' | 'dbCpu', string>>
+  canvasLabel?: string
 }
 
 export function ArchitectureCanvas({
@@ -60,6 +63,9 @@ export function ArchitectureCanvas({
   readOnly = false,
   bottomOverlay,
   fitViewKey,
+  faults,
+  telemetryLabels,
+  canvasLabel = 'System architecture',
 }: ArchitectureCanvasProps) {
   const flowRef = useRef<ReactFlowInstance<SystemFlowNode, SystemFlowEdge> | null>(null)
 
@@ -101,7 +107,7 @@ export function ArchitectureCanvas({
         nodesFocusable={!readOnly}
         edgesFocusable={!readOnly}
         deleteKeyCode={readOnly ? null : ['Backspace', 'Delete']}
-        aria-label={readOnly ? 'Read-only URL shortener architecture replay' : 'Editable URL shortener architecture'}
+        aria-label={readOnly ? `Read-only ${canvasLabel} replay` : `Editable ${canvasLabel}`}
       >
         <Background
           variant={BackgroundVariant.Dots}
@@ -116,13 +122,14 @@ export function ArchitectureCanvas({
         />
       </ReactFlow>
       {!readOnly && <ComponentDock activeKind={activeKind} onAdd={onAddNode} />}
-      {!readOnly && <TelemetryRibbon history={telemetry} />}
+      {!readOnly && <TelemetryRibbon history={telemetry} labels={telemetryLabels} />}
       {!readOnly && <SimulationControls
           load={load}
           fault={fault}
           onLoadChange={onLoadChange}
           onFaultChange={onFaultChange}
           onQuickAdd={onAddNode}
+          faults={faults}
         />}
       {bottomOverlay}
     </main>
