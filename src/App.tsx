@@ -219,11 +219,22 @@ export function App() {
     () => estimateCapacity({
       loadMultiplier: load,
       fault,
-      tuning: DEFAULT_CAPACITY_TUNING,
+      tuning: {
+        ...DEFAULT_CAPACITY_TUNING,
+        pricingPackId: capacity.pricingPackId,
+        benchmarkPackId: capacity.benchmarkPackId,
+      },
       componentCounts,
       criticalPathConnected,
     }),
-    [componentCounts, criticalPathConnected, fault, load],
+    [
+      capacity.benchmarkPackId,
+      capacity.pricingPackId,
+      componentCounts,
+      criticalPathConnected,
+      fault,
+      load,
+    ],
   )
 
   const replayFrame = useMemo(
@@ -361,7 +372,10 @@ export function App() {
     const presentation = presentReplayFrame(replayFrame, replayTick, !replayPlaying)
     setLoad(replayFrame.load)
     setFault(replayFrame.fault)
-    setCapacity(replayFrame.capacity ?? DEFAULT_CAPACITY_TUNING)
+    setCapacity({
+      ...DEFAULT_CAPACITY_TUNING,
+      ...(replayFrame.capacity ?? {}),
+    })
     setTick(replayTick)
     setNodes(presentation.nodes)
     setEdges(presentation.edges)
@@ -1081,7 +1095,11 @@ export function App() {
             onCommitPrediction={commitPrediction}
             onTuningChange={changeCapacity}
             onDefend={defendCapacity}
-            onReset={() => changeCapacity({ ...DEFAULT_CAPACITY_TUNING })}
+            onReset={() => changeCapacity({
+              ...DEFAULT_CAPACITY_TUNING,
+              pricingPackId: capacity.pricingPackId,
+              benchmarkPackId: capacity.benchmarkPackId,
+            })}
             onOpenInterviewer={() => setRightPanelMode('interview')}
             onClose={() => setInterviewerOpen((value) => !value)}
           />

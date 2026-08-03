@@ -36,6 +36,8 @@ The launch topology scores `76/100`. Connecting a complete second cache path mak
 - Live traffic animation and telemetry for throughput, p99 latency, errors, database CPU, cache misses, and queue depth.
 - Bottleneck Defense: prediction-before-feedback, cache/index/pool/replica/database tuning, and a live baseline comparison.
 - A versioned estimated cost model with monthly cost, cost per million redirects, workload math, storage footprint, and disclosed assumptions.
+- Separate calibration controls for verified AWS `us-east-1` unit rates and capacity evidence, so a provider price is never presented as measured throughput.
+- A reproducible local benchmark pack with real `pgbench` and `redis-benchmark` results, plus strict validation for the public pack format.
 - Deterministic load controls (`1x`, `3x`, `10x`) and four fault injections: cache outage, slow database, network partition, and retry storm.
 - A local interviewer with follow-up questions, hints, design review, and answer feedback informed by the current diagram and simulation metrics.
 - Semantic attempt recording for load, fault, topology, capacity tuning, interviewer-answer, and submission actions without storing derived animation noise.
@@ -68,7 +70,13 @@ npm run preview   # serve the production bundle locally
 
 The simulation engine is the source of truth. Given the same workload, capacity choices, topology, fault, and tick, it computes the same state, node health, metrics, and estimate. An interview provider may interpret that state, ask a question, or critique an answer; it must not invent or overwrite simulation results.
 
-Cost is intentionally labeled `Estimated`. The `reference-2026.08` model is a transparent scenario model, not an AWS, GCP, or Azure quote: it exposes the retention, row-size, replica-efficiency, component-price, and storage-price assumptions that produced the number. Production pricing should be versioned by provider, region, and pricing date before it is presented as a cloud bill forecast.
+Cost is intentionally labeled `Estimated`. The default price pack uses checked AWS `us-east-1` on-demand rates for Fargate, Application Load Balancer, ElastiCache for Valkey, SQS, RDS for PostgreSQL, and gp3. The rates are verified; traffic shape, provisioned quantities, retention, replicas, and excluded services remain modeled, so the result is an architecture subtotal rather than a cloud bill forecast.
+
+Capacity evidence is a separate axis. The default `reference-2026.08` capacity pack is transparent but estimated. The optional local M1 Pro pack contains measured `pgbench` and `redis-benchmark` baselines, while its unmeasured service capacity and 8/16 vCPU extrapolations remain explicitly marked `estimated` or `derived`. It is useful for learning how calibration changes a conclusion; it is not an AWS benchmark.
+
+See [Calibration packs](docs/CALIBRATION.md) for exact SKU rates, formulas, benchmark commands, provenance, exclusions, and the fail-closed pack contract.
+
+![Faultline pricing and benchmark calibration](docs/assets/faultline-calibration-desktop.jpg)
 
 The current `LocalInterviewProvider` is a deterministic, offline preview. `InterviewRouter` keeps the UI independent from the provider, so a future OpenAI-compatible or Perplexity-backed implementation can be registered without changing callers.
 
@@ -119,7 +127,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Product d
 src/
   challenges/   Challenge manifests, requirements, cases, and rubrics
   canvas/       React Flow nodes, edges, types, and launch scenario
-  capacity/     Workload, bottleneck, database tuning, and cost model
+  capacity/     Workload, bottleneck, calibration packs, and cost model
   components/   Product chrome, controls, telemetry, and animated icons
   domain/       Shared system-design and simulation contracts
   interview/    Provider interface, router, local interviewer, and tests

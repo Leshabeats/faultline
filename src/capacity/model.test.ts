@@ -19,6 +19,8 @@ describe('estimateCapacity', () => {
     expect(first.workload.createRps).toBe(100)
     expect(first.workload.retainedRows).toBe(15_768_000_000)
     expect(first.modelStatus).toBe('estimated')
+    expect(first.calibration.pricing.status).toBe('verified-rates')
+    expect(first.calibration.capacity.status).toBe('estimated')
   })
 
   it('rewards an indexed, replicated database and a larger pool', () => {
@@ -32,6 +34,7 @@ describe('estimateCapacity', () => {
       loadMultiplier: 10,
       fault: 'cache-outage',
       tuning: {
+        ...DEFAULT_CAPACITY_TUNING,
         cacheHitRate: 0.99,
         indexedLookup: true,
         poolSize: 600,
@@ -66,5 +69,30 @@ describe('estimateCapacity', () => {
     expect(replicated.cost.databaseStorage).toBeGreaterThan(noReplica.cost.databaseStorage)
     expect(replicated.cost.databaseCompute).toBeGreaterThan(noReplica.cost.databaseCompute)
     expect(replicated.cost.perMillionRedirects).toBeGreaterThan(0)
+  })
+
+  it('keeps verified prices separate from measured capacity evidence', () => {
+    const reference = estimateCapacity({
+      loadMultiplier: 10,
+      fault: 'none',
+      tuning: {
+        ...DEFAULT_CAPACITY_TUNING,
+        benchmarkPackId: 'reference-2026.08',
+      },
+    })
+    const locallyCalibrated = estimateCapacity({
+      loadMultiplier: 10,
+      fault: 'none',
+      tuning: {
+        ...DEFAULT_CAPACITY_TUNING,
+        benchmarkPackId: 'local-m1-pro-2026.08',
+      },
+    })
+
+    expect(reference.calibration.pricing.status).toBe('verified-rates')
+    expect(reference.calibration.capacity.status).toBe('estimated')
+    expect(locallyCalibrated.calibration.capacity.status).toBe('mixed-measured')
+    expect(locallyCalibrated.utilization.cache).toBeGreaterThan(reference.utilization.cache)
+    expect(locallyCalibrated.utilization.database).toBeGreaterThan(reference.utilization.database)
   })
 })

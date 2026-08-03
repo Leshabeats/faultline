@@ -164,7 +164,7 @@ export function computeSimulation(input: SimulationInput): SimulationSnapshot {
       const cacheReplicas = Math.max(1, input.componentCounts?.cache ?? 1)
       nodeHealth.cache = cacheReplicas > 1 ? 'degraded' : 'failed'
     } else {
-      nodeHealth.cache = 'healthy'
+      nodeHealth.cache = capacity.utilization.cache >= 1 ? 'hot' : 'healthy'
     }
     if (fault === 'network-partition') nodeHealth.gateway = 'failed'
   }
@@ -214,7 +214,11 @@ export function computeSimulation(input: SimulationInput): SimulationSnapshot {
       : nodeHealth.service === 'degraded'
         ? 'Saturated'
         : `${round(metrics.p99 * 0.2)}ms app`
-  nodeDetails.cache = nodeHealth.cache === 'failed' ? 'Unavailable' : `${metrics.cacheMiss}% miss`
+  nodeDetails.cache = nodeHealth.cache === 'failed'
+    ? 'Unavailable'
+    : nodeHealth.cache === 'hot' && input.capacity
+      ? `${round(capacity.utilization.cache * 100)}% capacity`
+      : `${metrics.cacheMiss}% miss`
   nodeDetails.queue = nodeHealth.queue === 'backlog' ? `${metrics.queueDepth} backlog` : `${metrics.queueDepth} queued`
   nodeDetails.database = `${metrics.dbCpu}% CPU`
 

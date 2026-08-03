@@ -44,6 +44,8 @@ describe('replay serialization', () => {
       poolSize: 300,
       readReplicas: 1,
       databaseProfile: 'balanced',
+      pricingPackId: 'aws-us-east-1-2026.07',
+      benchmarkPackId: 'local-m1-pro-2026.08',
     }
     const parsed = parseReplayEnvelope(serializeReplayEnvelope(attempt))
 

@@ -1,10 +1,12 @@
 import {
+  BadgeCheck,
   Check,
   ChevronDown,
   ChevronLeft,
   CircleDollarSign,
   Database,
   Gauge,
+  FlaskConical,
   MessageCircle,
   RotateCcw,
   ShieldCheck,
@@ -15,6 +17,12 @@ import type {
   CapacityTuning,
 } from '../domain/system'
 import { CAPACITY_MODEL_LABEL } from '../capacity/model'
+import {
+  benchmarkPackOptions,
+  pricingPackOptions,
+  resolveBenchmarkPack,
+  resolvePricingPack,
+} from '../capacity/calibration'
 
 export type BottleneckPrediction = BottleneckKind
 
@@ -81,7 +89,12 @@ function SegmentedControl<T extends string | number>({
   return (
     <div className="tuning-control">
       <span>{label}</span>
-      <div className="tuning-segments" role="group" aria-label={label}>
+      <div
+        className="tuning-segments"
+        role="group"
+        aria-label={label}
+        style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}
+      >
         {options.map((option) => (
           <button
             key={option.value}
@@ -138,6 +151,8 @@ export function BottleneckPanel({
   const correctPrediction = prediction === baseline.bottleneck
   const nextLimitMoved = report.bottleneck !== baseline.bottleneck
   const costDelta = report.cost.total - baseline.cost.total
+  const pricingPack = resolvePricingPack(report.calibration.pricing.id)
+  const benchmarkPack = resolveBenchmarkPack(report.calibration.capacity.id)
 
   return (
     <aside className={`interviewer-panel bottleneck-panel ${open ? 'is-open' : 'is-closed'}`}>
@@ -260,6 +275,51 @@ export function BottleneckPanel({
               </p>
             </section>
 
+            <section className="calibration-section">
+              <div className="section-title-row calibration-heading">
+                <div>
+                  <h2>Calibration</h2>
+                  <p>Verified rates and capacity evidence stay separate.</p>
+                </div>
+              </div>
+              <SegmentedControl
+                label="Pricing"
+                value={report.calibration.pricing.id}
+                options={pricingPackOptions}
+                onChange={(pricingPackId) => onTuningChange({ ...tuning, pricingPackId })}
+              />
+              <div className="calibration-evidence">
+                <BadgeCheck size={15} />
+                <span>
+                  <strong>
+                    {pricingPack.status === 'verified-rates' ? 'Verified unit rates' : 'Reference units'}
+                  </strong>
+                  <small>
+                    {pricingPack.status === 'verified-rates'
+                      ? `${pricingPack.region} · checked ${pricingPack.checkedAt} · ${pricingPack.sources.length} sources`
+                      : 'Training baseline · no provider rate card'}
+                  </small>
+                </span>
+              </div>
+              <SegmentedControl
+                label="Capacity"
+                value={report.calibration.capacity.id}
+                options={benchmarkPackOptions}
+                onChange={(benchmarkPackId) => onTuningChange({ ...tuning, benchmarkPackId })}
+              />
+              <div className="calibration-evidence is-benchmark">
+                <FlaskConical size={15} />
+                <span>
+                  <strong>
+                    {benchmarkPack.status === 'mixed-measured' ? 'Measured + derived' : 'Estimated capacity'}
+                  </strong>
+                  <small>
+                    {benchmarkPack.environment?.hardware ?? 'Transparent scenario baseline'}
+                  </small>
+                </span>
+              </div>
+            </section>
+
             <section className="tuning-section">
               <div className="section-title-row">
                 <div>
@@ -333,6 +393,7 @@ export function BottleneckPanel({
               </summary>
               <dl>
                 <div><dt>DB reads</dt><dd>{Math.round(report.workload.databaseReadRps / 1000)}k/s</dd></div>
+                <div><dt>Cache utilization</dt><dd>{percent(report.utilization.cache)}</dd></div>
                 <div><dt>Effective hit rate</dt><dd>{percent(report.workload.effectiveCacheHitRate)}</dd></div>
                 <div><dt>Retained rows</dt><dd>{(report.workload.retainedRows / 1_000_000_000).toFixed(1)}B</dd></div>
                 <div><dt>Raw storage</dt><dd>{(report.workload.rawStorageGiB / 1024).toFixed(1)} TiB</dd></div>
@@ -340,6 +401,18 @@ export function BottleneckPanel({
               <ul>
                 {report.assumptions.map((assumption) => <li key={assumption}>{assumption}</li>)}
               </ul>
+              {pricingPack.sources.length > 0 && (
+                <div className="calibration-sources">
+                  <span>Rate sources</span>
+                  <div>
+                    {pricingPack.sources.map((source) => (
+                      <a key={source.service} href={source.url} target="_blank" rel="noreferrer">
+                        {source.service}
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
             </details>
 
             <button className="defend-design" type="button" onClick={onDefend}>

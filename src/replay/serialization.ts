@@ -61,6 +61,8 @@ const cacheHitRates = [0.9, 0.95, 0.99]
 const poolSizes = [100, 300, 600]
 const readReplicaCounts = [0, 1, 2]
 const databaseProfiles = ['compact', 'balanced', 'performance']
+const pricingPackIds = ['reference-2026.08', 'aws-us-east-1-2026.07']
+const benchmarkPackIds = ['reference-2026.08', 'local-m1-pro-2026.08']
 const sources = ['user', 'system', 'interviewer'] as const
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -102,12 +104,16 @@ const isCapacityTuning = (value: unknown) =>
     'poolSize',
     'readReplicas',
     'databaseProfile',
+    'pricingPackId',
+    'benchmarkPackId',
   ]) &&
   cacheHitRates.includes(value.cacheHitRate as number) &&
   typeof value.indexedLookup === 'boolean' &&
   poolSizes.includes(value.poolSize as number) &&
   readReplicaCounts.includes(value.readReplicas as number) &&
-  databaseProfiles.includes(value.databaseProfile as string)
+  databaseProfiles.includes(value.databaseProfile as string) &&
+  (value.pricingPackId === undefined || pricingPackIds.includes(value.pricingPackId as string)) &&
+  (value.benchmarkPackId === undefined || benchmarkPackIds.includes(value.benchmarkPackId as string))
 
 const isIsoDate = (value: unknown): value is string =>
   isBoundedString(value) && Number.isFinite(Date.parse(value))

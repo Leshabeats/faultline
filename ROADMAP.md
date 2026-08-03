@@ -18,9 +18,15 @@ Faultline is intentionally shipping as a narrow, playable vertical slice before 
 - Expose workload and pricing assumptions instead of presenting simulated numbers as measured truth.
 - Record capacity changes in deterministic failure replay and hand the final trade-off to the interviewer.
 
-## v0.3.1 — Calibration and replay polish
+## v0.3.1 — Calibration — shipped
 
-- Provider/region/date-specific price packs and benchmark provenance.
+- Provider/region/date-specific price packs with independently displayed rate provenance.
+- A real local `pgbench`/`redis-benchmark` pack with measured, derived, and estimated authority per datum.
+- Versioned, bounded, fail-closed benchmark-pack validation.
+- Cache saturation driven by the selected capacity pack.
+
+## v0.3.2 — Replay and sharing polish
+
 - Public URL share links once the Go service exists.
 - More explicit per-node fault targeting.
 - Deeper scoring explanations tied to the replay's key moment.

@@ -1561,6 +1561,53 @@ button:disabled {
   color: var(--green-dark);
 }
 
+.calibration-section {
+  margin-top: 25px;
+}
+
+.calibration-heading {
+  margin-bottom: 9px;
+}
+
+.calibration-evidence {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: -1px 0 4px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  color: var(--green-dark);
+  background: rgba(49, 181, 82, 0.07);
+}
+
+.calibration-evidence.is-benchmark {
+  color: #6953a8;
+  background: rgba(113, 87, 180, 0.07);
+}
+
+.calibration-evidence > span,
+.calibration-evidence strong,
+.calibration-evidence small {
+  min-width: 0;
+  display: block;
+}
+
+.calibration-evidence strong {
+  font-size: 9px;
+  font-weight: 610;
+}
+
+.calibration-evidence small {
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--ink-tertiary);
+  font-size: 8px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .tuning-section {
   margin-top: 26px;
 }
@@ -1716,6 +1763,43 @@ button:disabled {
   color: var(--ink-secondary);
   font-size: 9px;
   line-height: 1.5;
+}
+
+.calibration-sources {
+  margin: 0 0 15px;
+  padding-top: 11px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.calibration-sources > span {
+  display: block;
+  margin-bottom: 7px;
+  color: var(--ink-tertiary);
+  font-size: 8px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.calibration-sources > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.calibration-sources a {
+  padding: 5px 7px;
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+  color: var(--ink-secondary);
+  background: rgba(255, 255, 255, 0.76);
+  font-size: 8px;
+  text-decoration: none;
+}
+
+.calibration-sources a:hover {
+  color: var(--ink);
+  border-color: rgba(102, 118, 134, 0.28);
 }
 
 .defend-design {

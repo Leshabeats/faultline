@@ -50,6 +50,8 @@ export type DatabaseProfile = 'compact' | 'balanced' | 'performance'
 export type CacheHitRate = 0.9 | 0.95 | 0.99
 export type ConnectionPoolSize = 100 | 300 | 600
 export type ReadReplicaCount = 0 | 1 | 2
+export type PricingPackId = 'reference-2026.08' | 'aws-us-east-1-2026.07'
+export type BenchmarkPackId = 'reference-2026.08' | 'local-m1-pro-2026.08'
 
 export interface CapacityTuning {
   cacheHitRate: CacheHitRate
@@ -57,6 +59,10 @@ export interface CapacityTuning {
   poolSize: ConnectionPoolSize
   readReplicas: ReadReplicaCount
   databaseProfile: DatabaseProfile
+  /** Optional so replay envelopes recorded before v0.3.1 remain valid. */
+  pricingPackId?: PricingPackId
+  /** Optional so replay envelopes recorded before v0.3.1 remain valid. */
+  benchmarkPackId?: BenchmarkPackId
 }
 
 export type BottleneckKind =
@@ -74,8 +80,25 @@ export interface CapacityCostBreakdown {
 }
 
 export interface CapacityReport {
-  modelVersion: 'reference-2026.08'
+  modelVersion: 'calibrated-2026.08'
   modelStatus: 'estimated'
+  calibration: {
+    pricing: {
+      id: PricingPackId
+      label: string
+      status: 'reference' | 'verified-rates'
+      checkedAt: string
+      region?: string
+      sourceCount: number
+    }
+    capacity: {
+      id: BenchmarkPackId
+      label: string
+      status: 'estimated' | 'mixed-measured'
+      measuredAt?: string
+      environment?: string
+    }
+  }
   workload: {
     redirectRps: number
     createRps: number
@@ -85,6 +108,7 @@ export interface CapacityReport {
     rawStorageGiB: number
   }
   utilization: {
+    cache: number
     database: number
     connectionPool: number
     service: number
