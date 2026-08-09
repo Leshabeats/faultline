@@ -128,6 +128,8 @@ describe('replay serialization', () => {
             kind: 'client',
             label: 'Clients',
             position: { x: 1, y: 2 },
+            replicas: 3,
+            shards: 4,
           },
         ],
         edges: [],
@@ -142,7 +144,9 @@ describe('replay serialization', () => {
       load: 10,
       fault: 'cache-outage',
       capacity: { indexedLookup: true, readReplicas: 2 },
-      architecture: { nodes: [{ data: { kind: 'client', label: 'Clients' } }] },
+      architecture: {
+        nodes: [{ data: { kind: 'client', label: 'Clients', replicas: 3, shards: 4 } }],
+      },
     })
   })
 

@@ -2,6 +2,11 @@ import { Activity, Braces, Minus, Network, Plus, RotateCcw, X } from 'lucide-rea
 import { useEffect, useState } from 'react'
 import type { SystemFlowNode } from '../canvas/types'
 import type { FaultMode, Locale, ScenarioId } from '../domain/system'
+import {
+  MAX_REPLICAS_BY_KIND,
+  normalizeNodeTopology,
+  type NodeTopology,
+} from '../domain/topology'
 import { UI_COPY, componentLabels } from '../i18n'
 
 type InspectorTab = 'overview' | 'contract' | 'scaling'
@@ -61,7 +66,7 @@ interface ComponentInspectorProps {
   fault: FaultMode
   onClose: () => void
   onFaultChange: (fault: FaultMode) => void
-  onTopologyChange: (nodeId: string, topology: { replicas: number; shards: number }) => void
+  onTopologyChange: (nodeId: string, topology: NodeTopology) => void
 }
 
 export function ComponentInspector({
@@ -79,18 +84,17 @@ export function ComponentInspector({
 
   const text = UI_COPY[locale]
   const copy = copies[scenario][locale][node.data.kind] ?? genericCopy(locale, node)
-  const replicas = Math.max(1, Math.floor(node.data.replicas ?? (node.data.kind === 'database' ? 1 : 1)))
-  const shards = Math.max(1, Math.floor(node.data.shards ?? 1))
+  const { replicas, shards } = normalizeNodeTopology(node.data.kind, node.data)
+  const maxReplicas = MAX_REPLICAS_BY_KIND[node.data.kind]
   const canReplicate = node.data.kind !== 'client' && node.data.kind !== 'region'
   const canShard = node.data.kind === 'cache' || node.data.kind === 'database'
   const cacheUnavailable = node.data.kind === 'cache' && fault === 'cache-outage'
 
-  const setTopology = (next: Partial<{ replicas: number; shards: number }>) => {
-    onTopologyChange(node.id, {
-      replicas: Math.min(4, Math.max(1, next.replicas ?? replicas)),
-      shards: Math.min(8, Math.max(1, next.shards ?? shards)),
-    })
-  }
+  const setTopology = (next: Partial<NodeTopology>) =>
+    onTopologyChange(node.id, normalizeNodeTopology(node.data.kind, {
+      replicas: next.replicas ?? replicas,
+      shards: next.shards ?? shards,
+    }))
 
   return (
     <aside className="component-inspector" aria-label={`${text.selected}: ${node.data.label}`}>
@@ -104,7 +108,7 @@ export function ComponentInspector({
 
       <div className="inspector-health-row">
         <span className={`health-pill health-${node.data.health}`}><i /> {node.data.detail}</span>
-        <span>{replicas}× · {shards} shard{shards === 1 ? '' : 's'}</span>
+        <span>{replicas}× · {shards} {locale === 'ru' ? 'шард.' : `shard${shards === 1 ? '' : 's'}`}</span>
       </div>
 
       {cacheUnavailable && (
@@ -115,7 +119,7 @@ export function ComponentInspector({
         </div>
       )}
 
-      <nav className="inspector-tabs" aria-label="Component details">
+      <nav className="inspector-tabs" aria-label={locale === 'ru' ? 'Сведения о компоненте' : 'Component details'}>
         {(['overview', 'contract', 'scaling'] as const).map((value) => (
           <button key={value} type="button" className={tab === value ? 'is-active' : ''} onClick={() => setTab(value)}>
             {text[value]}
@@ -156,7 +160,7 @@ export function ComponentInspector({
                 <div>
                   <button type="button" aria-label={`${text.replicas}: −`} onClick={() => setTopology({ replicas: replicas - 1 })} disabled={replicas <= 1}><Minus size={15} /></button>
                   <output>{replicas}</output>
-                  <button type="button" aria-label={`${text.replicas}: +`} onClick={() => setTopology({ replicas: replicas + 1 })} disabled={replicas >= 4}><Plus size={15} /></button>
+                  <button type="button" aria-label={`${text.replicas}: +`} onClick={() => setTopology({ replicas: replicas + 1 })} disabled={replicas >= maxReplicas}><Plus size={15} /></button>
                 </div>
               </div>
             )}

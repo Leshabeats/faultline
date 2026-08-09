@@ -178,7 +178,7 @@ export function BottleneckPanel({
       <header className="interviewer-header bottleneck-header">
         <div>
           <strong>{ru ? 'Защита узкого места' : 'Bottleneck Defense'}</strong>
-          <span>{CAPACITY_MODEL_LABEL}</span>
+          <span>{ru ? 'Калиброванная модель · август 2026' : CAPACITY_MODEL_LABEL}</span>
         </div>
         <div className="panel-header-actions">
           <button type="button" onClick={onOpenInterviewer} aria-label={ru ? 'Открыть интервьюера' : 'Open interviewer'} title={ru ? 'Интервьюер' : 'Interviewer'}>
@@ -191,7 +191,7 @@ export function BottleneckPanel({
       </header>
 
       <div className="interviewer-body bottleneck-body">
-        <div className="defense-step-rail" aria-label="Defense progress">
+        <div className="defense-step-rail" aria-label={ru ? 'Этапы защиты' : 'Defense progress'}>
           <span className="is-complete"><i>1</i> {ru ? 'Прогноз' : 'Predict'}</span>
           <span className={predictionLocked ? 'is-active' : ''}><i>2</i> {ru ? 'Настройка' : 'Tune'}</span>
           <span><i>3</i> {ru ? 'Защита' : 'Defend'}</span>
@@ -208,7 +208,7 @@ export function BottleneckPanel({
                   : `${Math.round(report.workload.redirectRps / 1000)}k redirects/s. Commit before seeing the model.`}</p>
               </div>
             </div>
-            <div className="prediction-options" role="radiogroup" aria-label="Predicted first bottleneck">
+            <div className="prediction-options" role="radiogroup" aria-label={ru ? 'Прогноз первого узкого места' : 'Predicted first bottleneck'}>
               {localizedPredictions.map((option) => (
                 <button
                   key={option.value}

@@ -136,20 +136,20 @@ export function FanoutPanel({
       <header className="interviewer-header bottleneck-header">
         <div>
           <strong>{ru ? 'Защита от скачка' : 'Celebrity Defense'}</strong>
-          <span>{NEWS_FEED_MODEL_LABEL}</span>
+          <span>{ru ? 'Оценочная модель · август 2026' : NEWS_FEED_MODEL_LABEL}</span>
         </div>
         <div className="panel-header-actions">
-          <button type="button" onClick={onOpenInterviewer} aria-label="Open interviewer" title="Interviewer">
+          <button type="button" onClick={onOpenInterviewer} aria-label={ru ? 'Открыть интервьюера' : 'Open interviewer'} title={ru ? 'Интервьюер' : 'Interviewer'}>
             <MessageCircle size={19} />
           </button>
-          <button type="button" onClick={onClose} aria-label="Close celebrity defense">
+          <button type="button" onClick={onClose} aria-label={ru ? 'Закрыть защиту от скачка' : 'Close celebrity defense'}>
             <ChevronLeft size={21} />
           </button>
         </div>
       </header>
 
       <div className="interviewer-body bottleneck-body">
-        <div className="defense-step-rail" aria-label="Defense progress">
+        <div className="defense-step-rail" aria-label={ru ? 'Этапы защиты' : 'Defense progress'}>
           <span className="is-complete"><i>1</i> {ru ? 'Прогноз' : 'Predict'}</span>
           <span className={predictionLocked ? 'is-active' : ''}><i>2</i> {ru ? 'Настройка' : 'Tune'}</span>
           <span><i>3</i> {ru ? 'Защита' : 'Defend'}</span>
@@ -164,7 +164,7 @@ export function FanoutPanel({
                 <p>{ru ? 'Один пост. 50 миллионов подписчиков. Сначала зафиксируйте прогноз.' : 'One post. 50 million followers. Commit before seeing the model.'}</p>
               </div>
             </div>
-            <div className="prediction-options" role="radiogroup" aria-label="Predicted first bottleneck">
+            <div className="prediction-options" role="radiogroup" aria-label={ru ? 'Прогноз первого узкого места' : 'Predicted first bottleneck'}>
               {predictions.map((option) => (
                 <button
                   key={option.value}

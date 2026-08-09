@@ -108,7 +108,15 @@ export interface ReplayFaultChangedEventV1 extends ReplayEventBaseV1 {
 
 export interface ReplayCapacityChangedEventV1 extends ReplayEventBaseV1 {
   type: 'capacity.changed'
-  payload: { capacity: CapacityTuning }
+  payload: {
+    capacity: CapacityTuning
+    /** Atomic canvas updates coupled to this tuning transition. */
+    topology?: Array<{
+      nodeId: string
+      replicas: number
+      shards: number
+    }>
+  }
 }
 
 export interface ReplayNodeAddedEventV1 extends ReplayEventBaseV1 {
@@ -195,6 +203,12 @@ type WithoutRecordingMetadata<T> = T extends ReplayEventV1
   : never
 
 export type ReplayEventDraftV1 = WithoutRecordingMetadata<ReplayEventV1>
+
+type WithoutClockMetadata<T> = T extends ReplayEventDraftV1
+  ? Omit<T, 'id' | 'atMs'>
+  : never
+
+export type ReplayEventContentV1 = WithoutClockMetadata<ReplayEventDraftV1>
 
 export interface ReplayAttemptV1 {
   id: string

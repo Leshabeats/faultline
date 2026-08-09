@@ -1,12 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import {
-  addEdge,
-  applyEdgeChanges,
-  applyNodeChanges,
-  type Connection,
-  type EdgeChange,
-  type NodeChange,
-} from '@xyflow/react'
 import { ArchitectureCanvas } from './canvas/ArchitectureCanvas'
 import type { SystemFlowEdge, SystemFlowNode } from './canvas/types'
 import { InterviewerPanel } from './components/InterviewerPanel'
@@ -27,8 +19,6 @@ import {
   getChallengePack,
 } from './challenges/registry'
 import {
-  COMPONENT_LABELS,
-  FAULT_LABELS,
   type ComponentHealth,
   type ComponentKind,
   type CapacityTuning,
@@ -40,6 +30,19 @@ import {
   type TimelineEvent,
 } from './domain/system'
 import {
+  applicationCopy,
+  bottleneckCopy,
+  capacityChangeDetail,
+  fallbackKeyMoment,
+  replayImportErrorCopy,
+} from './application/copy'
+import { useInterviewSession } from './application/useInterviewSession'
+import { useArchitectureEditor } from './canvas/useArchitectureEditor'
+import {
+  databaseReplicas,
+  normalizeNodeTopology,
+} from './domain/topology'
+import {
   DEFAULT_CAPACITY_TUNING,
   estimateCapacity,
 } from './capacity/model'
@@ -48,8 +51,7 @@ import {
   estimateNewsFeed,
   normalizeNewsFeedTuning,
 } from './newsFeed/model'
-import { interviewRouter } from './interview/router'
-import type { InterviewAction, InterviewContext } from './interview/types'
+import type { InterviewContext } from './interview/types'
 import { judgeNewsFeed, judgeUrlShortener, type JudgeReport } from './judge'
 import { computeSimulation, formatMetric } from './simulation/engine'
 import { analyzeTopology } from './simulation/topology'
@@ -59,8 +61,10 @@ import {
   parseReplayEnvelope,
   playReplayAt,
   recordReplayEvent,
+  serializeScenarioSnapshot,
   serializeReplayEnvelope,
   type ReplayAttemptV1,
+  type ReplayEventContentV1,
   type ReplayEventDraftV1,
 } from './replay'
 import {
@@ -69,12 +73,10 @@ import {
   presentReplayFrame,
   replayKeyMoment,
   replayTimelineEvents,
-  toReplayEdge,
   toReplayInitial,
-  toReplayNode,
 } from './replay/presentation'
 import { verifyImportedAttempt } from './replay/verification'
-import { faultLabels as localizedFaultLabels, initialLocale, localizeNodeDetail, localizeNodeLabel, scenarioLabels } from './i18n'
+import { faultLabels as localizedFaultLabels, initialLocale, localizeChallengeDefinition, localizeNodeDetail, localizeNodeLabel, scenarioLabels } from './i18n'
 import { useTrafficRamp } from './simulation/useTrafficRamp'
 
 const toneForHealth = (health: ComponentHealth) => {
@@ -101,12 +103,6 @@ const initialEvents = (locale: Locale): TimelineEvent[] => [
   },
 ]
 
-type ReplayDraftWithoutClock = ReplayEventDraftV1 extends infer Event
-  ? Event extends ReplayEventDraftV1
-    ? Omit<Event, 'id' | 'atMs'>
-    : never
-  : never
-
 const createReplayRepository = () => {
   try {
     return new ReplayAttemptRepository(window.localStorage)
@@ -122,6 +118,7 @@ const createReplayRepository = () => {
 
 export function App() {
   const [locale, setLocale] = useState<Locale>(initialLocale)
+  const copy = applicationCopy[locale]
   const [challengeId, setChallengeId] = useState<ScenarioId>('url-shortener')
   const activePack = getChallengePack(challengeId)
   const [nodes, setNodes] = useState<SystemFlowNode[]>(() => clonePackNodes(getChallengePack('url-shortener')))
@@ -150,12 +147,6 @@ export function App() {
     tone: 'success' | 'error'
   } | null>(null)
   const [events, setEvents] = useState<TimelineEvent[]>(() => initialEvents(initialLocale()))
-  const [answer, setAnswer] = useState('')
-  const [feedback, setFeedback] = useState('')
-  const [prompt, setPrompt] = useState(() => initialLocale() === 'ru'
-    ? 'С чего начнёте проектирование сервиса коротких ссылок: с требований или с оценки нагрузки?'
-    : 'Would you start the URL shortener design with requirements or a traffic estimate?')
-  const [interviewBusy, setInterviewBusy] = useState(false)
   const [judgeReport, setJudgeReport] = useState<JudgeReport | null>(null)
   const [replayRepository] = useState(createReplayRepository)
   const [savedAttempts, setSavedAttempts] = useState<ReplayAttemptV1[]>(() => {
@@ -293,25 +284,27 @@ export function App() {
     [replayAttempt, replayCursorMs],
   )
   const replayEvents = useMemo(
-    () => replayAttempt ? replayTimelineEvents(replayAttempt) : [],
-    [replayAttempt],
+    () => replayAttempt ? replayTimelineEvents(replayAttempt, locale) : [],
+    [locale, replayAttempt],
   )
   const activeReplayEvent = useMemo(
     () => [...replayEvents].reverse().find((event) => event.atMs <= replayCursorMs) ?? null,
     [replayCursorMs, replayEvents],
   )
   const historyItems = useMemo<HistoryAttemptItem[]>(
-    () => savedAttempts.map((attempt) => ({
-      id: attempt.id,
-      title: challengeOptions.find((option) => option.id === attempt.challengeId)?.title
-        ?? attempt.challengeId,
-      completedAt: attempt.updatedAt,
-      durationMs: attempt.durationMs,
-      score: attempt.summary?.score,
-      passed: attempt.summary?.passed,
-      keyMoment: replayKeyMoment(attempt),
-    })),
-    [savedAttempts],
+    () => savedAttempts.map((attempt) => {
+      const challenge = challengeOptions.find((option) => option.id === attempt.challengeId)
+      return {
+        id: attempt.id,
+        title: challenge ? scenarioLabels[locale][challenge.id].title : attempt.challengeId,
+        completedAt: attempt.updatedAt,
+        durationMs: attempt.durationMs,
+        score: attempt.summary?.score,
+        passed: attempt.summary?.passed,
+        keyMoment: replayKeyMoment(attempt, locale),
+      }
+    }),
+    [locale, savedAttempts],
   )
 
   const [telemetry, setTelemetry] = useState<TelemetryPoint[]>(() =>
@@ -347,7 +340,7 @@ export function App() {
     [elapsedSeconds],
   )
 
-  const recordAction = useCallback((draft: ReplayDraftWithoutClock) => {
+  const recordAction = useCallback((draft: ReplayEventContentV1) => {
     const now = new Date()
     let current = draftAttemptRef.current
     let atMs = 0
@@ -536,175 +529,27 @@ export function App() {
     )
   }, [capacity, challengeId, effectiveLoad, fault, nodes, playing, replayAttempt, replayPlaying, snapshot.metrics])
 
-  const onNodesChange = useCallback(
-    (changes: NodeChange<SystemFlowNode>[]) => {
-      setNodes((current) => applyNodeChanges(changes, current))
-      changes.forEach((change) => {
-        if (change.type !== 'remove') return
-        recordAction({
-          type: 'node.removed',
-          source: 'user',
-          payload: { nodeId: change.id },
-          timeline: {
-            title: 'Component removed',
-            detail: 'Topology recalculated',
-            tone: 'warning',
-          },
-        })
-      })
-    },
-    [recordAction],
-  )
-
-  const onNodeDragStop = useCallback((node: SystemFlowNode) => {
-    recordAction({
-      type: 'node.updated',
-      source: 'user',
-      payload: { nodeId: node.id, patch: { position: { ...node.position } } },
-      timeline: {
-        title: `${node.data.label} moved`,
-        detail: 'Architecture layout updated',
-        tone: 'neutral',
-      },
-    })
-  }, [recordAction])
-
-  const onEdgesChange = useCallback(
-    (changes: EdgeChange<SystemFlowEdge>[]) => {
-      setEdges((current) => applyEdgeChanges(changes, current))
-      changes.forEach((change) => {
-        if (change.type !== 'remove') return
-        recordAction({
-          type: 'edge.removed',
-          source: 'user',
-          payload: { edgeId: change.id },
-          timeline: {
-            title: 'Connection removed',
-            detail: 'Topology recalculated',
-            tone: 'warning',
-          },
-        })
-      })
-    },
-    [recordAction],
-  )
-
-  const onConnect = useCallback(
-    (connection: Connection) => {
-      if (!connection.source || !connection.target) return
-      const edge: SystemFlowEdge = {
-        ...connection,
-        id: createStableId('edge'),
-        type: 'traffic',
-        data: { tone: 'healthy', intensity: load, paused: !playing },
-      }
-      setEdges((current) =>
-        addEdge<SystemFlowEdge>(edge, current),
-      )
-      addEvent('Connection added', 'Topology recalculated', 'healthy')
-      recordAction({
-        type: 'edge.added',
-        source: 'user',
-        payload: { edge: toReplayEdge(edge) },
-        timeline: {
-          title: 'Connection added',
-          detail: 'Topology recalculated',
-          tone: 'healthy',
-        },
-      })
-    },
-    [addEvent, load, playing, recordAction],
-  )
-
-  const addNode = useCallback(
-    (kind: ComponentKind) => {
-      setActiveKind(kind)
-      const current = canonicalStateRef.current.nodes
-      const instance = current.filter((node) => node.data.kind === kind).length + 1
-      const label = kind === 'service' && instance === 1
-        ? 'Service'
-        : `${COMPONENT_LABELS[kind]}${instance > 1 ? ` ${instance}` : ''}`
-      const node: SystemFlowNode = {
-        id: createStableId(kind),
-        type: 'system',
-        selected: true,
-        position: {
-          x: 360 + (current.length % 4) * 42,
-          y: 120 + (current.length % 3) * 95,
-        },
-        data: {
-          kind,
-          label,
-          health: snapshot.nodeHealth[kind] ?? 'healthy',
-          detail: snapshot.nodeDetails[kind] ?? 'Healthy',
-          load,
-        },
-      }
-      setNodes((nodes) => [
-        ...nodes.map((item) => ({ ...item, selected: false })),
-        node,
-      ])
-      addEvent(`${COMPONENT_LABELS[kind]} added`, 'Connect it to change the live model', 'healthy')
-      recordAction({
-        type: 'node.added',
-        source: 'user',
-        payload: { node: toReplayNode(node) },
-        timeline: {
-          title: `${label} added`,
-          detail: 'Connect it to change the live model',
-          tone: 'healthy',
-        },
-      })
-    },
-    [addEvent, load, recordAction, snapshot.nodeDetails, snapshot.nodeHealth],
-  )
-
-  const changeNodeTopology = useCallback((
-    nodeId: string,
-    topology: { replicas: number; shards: number },
-  ) => {
-    const node = canonicalStateRef.current.nodes.find((item) => item.id === nodeId)
-    if (!node) return
-    const replicas = Math.min(4, Math.max(1, Math.floor(topology.replicas)))
-    const shards = Math.min(8, Math.max(1, Math.floor(topology.shards)))
-    setNodes((current) => current.map((item) => item.id === nodeId
-      ? { ...item, data: { ...item.data, replicas, shards } }
-      : item))
-
-    if (node.data.kind === 'database') {
-      const readReplicas = Math.min(2, Math.max(0, replicas - 1)) as CapacityTuning['readReplicas']
-      const nextCapacity = { ...canonicalStateRef.current.capacity, readReplicas }
-      setCapacity(nextCapacity)
-      recordAction({
-        type: 'capacity.changed',
-        source: 'user',
-        payload: { capacity: nextCapacity },
-        timeline: {
-          title: locale === 'ru' ? 'Репликация БД обновлена' : 'Database replication updated',
-          detail: `${readReplicas} read replica${readReplicas === 1 ? '' : 's'}`,
-          tone: 'neutral',
-        },
-      })
-    }
-
-    addEvent(
-      locale === 'ru' ? 'Топология обновлена' : 'Topology updated',
-      locale === 'ru'
-        ? `${node.data.label}: ${replicas} репл., ${shards} шард.`
-        : `${node.data.label}: ${replicas} replicas, ${shards} shards`,
-      'neutral',
-    )
-    recordAction({
-      type: 'node.updated',
-      source: 'user',
-      payload: { nodeId, patch: { data: { replicas, shards } } },
-      timeline: {
-        title: locale === 'ru' ? 'Топология обновлена' : 'Topology updated',
-        detail: `${node.data.label}: ${replicas}× / ${shards} shards`,
-        tone: 'neutral',
-      },
-    })
-  }, [addEvent, locale, recordAction])
+  const {
+    onNodesChange,
+    onNodeDragStop,
+    onEdgesChange,
+    onConnect,
+    addNode,
+    changeNodeTopology,
+  } = useArchitectureEditor({
+    nodes,
+    load,
+    playing,
+    locale,
+    capacity,
+    snapshot,
+    setNodes,
+    setEdges,
+    setCapacity,
+    setActiveKind,
+    addEvent,
+    recordAction,
+  })
 
   const changeLoad = useCallback(
     (nextLoad: 1 | 3 | 10) => {
@@ -768,29 +613,45 @@ export function App() {
 
   const changeCapacity = useCallback((nextCapacity: CapacityTuning) => {
     setCapacity(nextCapacity)
-    setNodes((current) => current.map((node) => node.data.kind === 'database'
-      ? { ...node, data: { ...node.data, replicas: nextCapacity.readReplicas + 1 } }
-      : node))
+    const databaseTopology = canonicalStateRef.current.nodes
+      .filter((node) => node.data.kind === 'database')
+      .map((node) => {
+        const topology = normalizeNodeTopology(node.data.kind, {
+          ...node.data,
+          replicas: databaseReplicas(nextCapacity.readReplicas),
+        })
+        return { nodeId: node.id, ...topology }
+      })
+    setNodes((current) => current.map((node) => {
+      const topology = databaseTopology.find((item) => item.nodeId === node.id)
+      return topology
+        ? { ...node, data: { ...node.data, replicas: topology.replicas, shards: topology.shards } }
+        : node
+    }))
     const changedKey = (Object.keys(nextCapacity) as Array<keyof CapacityTuning>)
       .find((key) => nextCapacity[key] !== capacity[key])
-    const detail = changedKey
-      ? `${changedKey.replace(/([A-Z])/g, ' $1').toLowerCase()} updated`
-      : 'Reference tuning restored'
-    addEvent('Capacity tuning updated', detail, 'neutral')
+    const detail = capacityChangeDetail(locale, changedKey)
+    addEvent(copy.capacityUpdated, detail, 'neutral')
     recordAction({
       type: 'capacity.changed',
       source: 'user',
-      payload: { capacity: { ...nextCapacity } },
+      payload: {
+        capacity: { ...nextCapacity },
+        ...(nextCapacity.readReplicas !== capacity.readReplicas
+          ? { topology: databaseTopology }
+          : {}),
+      },
       timeline: {
-        title: 'Capacity tuning updated',
+        title: copy.capacityUpdated,
         detail,
         tone: 'neutral',
       },
     })
-  }, [addEvent, capacity, recordAction])
+  }, [addEvent, capacity, copy.capacityUpdated, locale, recordAction])
 
   const switchChallenge = useCallback((nextId: ScenarioId) => {
     const pack = getChallengePack(nextId)
+    const localizedDefinition = localizeChallengeDefinition(pack.definition, locale)
     setChallengeId(nextId)
     setNodes(clonePackNodes(pack))
     setEdges(clonePackEdges(pack))
@@ -824,22 +685,28 @@ export function App() {
     setEvents([{
       id: `challenge-${nextId}`,
       timestamp: '00:00',
-      title: `${pack.definition.title} loaded`,
-      detail: pack.definition.summary,
+      title: locale === 'ru'
+        ? `${localizedDefinition.title}: задача загружена`
+        : `${localizedDefinition.title} loaded`,
+      detail: localizedDefinition.summary,
       tone: 'neutral',
     }])
     draftAttemptRef.current = null
     recordingElapsedMsRef.current = 0
     setDraftAttempt(null)
-  }, [])
+  }, [locale])
 
   const commitPrediction = useCallback(() => {
     if (!bottleneckPrediction || predictionRationale.trim().length < 8) return
     setPredictionLocked(true)
     const matches = bottleneckPrediction === capacityReport.bottleneck
+    const estimatedBottleneck = bottleneckCopy(locale, capacityReport.bottleneck)
+    const predictedBottleneck = bottleneckCopy(locale, bottleneckPrediction)
     addEvent(
-      'Bottleneck prediction committed',
-      matches ? 'Prediction matches the estimated model' : `Model points to ${capacityReport.bottleneck}`,
+      locale === 'ru' ? 'Прогноз узкого места зафиксирован' : 'Bottleneck prediction committed',
+      matches
+        ? locale === 'ru' ? 'Прогноз совпадает с оценочной моделью' : 'Prediction matches the estimated model'
+        : locale === 'ru' ? `Модель указывает на ${estimatedBottleneck}` : `Model points to ${estimatedBottleneck}`,
       matches ? 'healthy' : 'warning',
     )
     recordAction({
@@ -847,15 +714,21 @@ export function App() {
       source: 'user',
       payload: {
         answer: predictionRationale.trim(),
-        prompt: 'What saturates first at 100k redirects/s during a cache outage?',
+        prompt: locale === 'ru'
+          ? 'Что первым насытится при 100 тыс. редиректов/с и отказе кеша?'
+          : 'What saturates first at 100k redirects/s during a cache outage?',
         feedback: matches
-          ? 'The prediction matches the current estimate.'
-          : `The current estimate points to ${capacityReport.bottleneck}.`,
+          ? locale === 'ru' ? 'Прогноз совпадает с текущей оценкой.' : 'The prediction matches the current estimate.'
+          : locale === 'ru' ? `Текущая оценка указывает на ${estimatedBottleneck}.` : `The current estimate points to ${estimatedBottleneck}.`,
         focus: `prediction:${bottleneckPrediction}`,
       },
       timeline: {
-        title: `Predicted ${bottleneckPrediction.replace('-', ' ')}`,
-        detail: matches ? 'Prediction holds' : 'Counterfactual revealed another limit',
+        title: locale === 'ru'
+          ? `Прогноз: ${predictedBottleneck}`
+          : `Predicted ${predictedBottleneck}`,
+        detail: matches
+          ? locale === 'ru' ? 'Прогноз подтвердился' : 'Prediction holds'
+          : locale === 'ru' ? 'Проверка выявила другой предел' : 'Counterfactual revealed another limit',
         tone: matches ? 'healthy' : 'warning',
       },
     })
@@ -863,6 +736,7 @@ export function App() {
     addEvent,
     bottleneckPrediction,
     capacityReport.bottleneck,
+    locale,
     predictionRationale,
     recordAction,
   ])
@@ -871,11 +745,15 @@ export function App() {
     if (!fanoutPrediction || fanoutPredictionRationale.trim().length < 8) return
     setFanoutPredictionLocked(true)
     const matches = fanoutPrediction === baselineNewsFeedReport.bottleneck
+    const estimatedBottleneck = bottleneckCopy(locale, baselineNewsFeedReport.bottleneck)
+    const predictedBottleneck = bottleneckCopy(locale, fanoutPrediction)
     addEvent(
-      'Spike prediction committed',
+      locale === 'ru' ? 'Прогноз скачка зафиксирован' : 'Spike prediction committed',
       matches
-        ? 'Prediction matches the estimated fan-out model'
-        : `Model points to ${baselineNewsFeedReport.bottleneck.replace(/-/g, ' ')}`,
+        ? locale === 'ru' ? 'Прогноз совпадает с оценочной fan-out моделью' : 'Prediction matches the estimated fan-out model'
+        : locale === 'ru'
+          ? `Модель указывает на ${estimatedBottleneck}`
+          : `Model points to ${estimatedBottleneck}`,
       matches ? 'healthy' : 'warning',
     )
     recordAction({
@@ -883,15 +761,21 @@ export function App() {
       source: 'user',
       payload: {
         answer: fanoutPredictionRationale.trim(),
-        prompt: 'What saturates first when one post targets 50 million followers?',
+        prompt: locale === 'ru'
+          ? 'Что первым насытится, когда один пост нужно доставить 50 миллионам подписчиков?'
+          : 'What saturates first when one post targets 50 million followers?',
         feedback: matches
-          ? 'The prediction matches the current estimate.'
-          : `The current estimate points to ${baselineNewsFeedReport.bottleneck}.`,
+          ? locale === 'ru' ? 'Прогноз совпадает с текущей оценкой.' : 'The prediction matches the current estimate.'
+          : locale === 'ru' ? `Текущая оценка указывает на ${estimatedBottleneck}.` : `The current estimate points to ${estimatedBottleneck}.`,
         focus: `prediction:${fanoutPrediction}`,
       },
       timeline: {
-        title: `Predicted ${fanoutPrediction.replace(/-/g, ' ')}`,
-        detail: matches ? 'Prediction holds' : 'Counterfactual revealed another limit',
+        title: locale === 'ru'
+          ? `Прогноз: ${predictedBottleneck}`
+          : `Predicted ${predictedBottleneck}`,
+        detail: matches
+          ? locale === 'ru' ? 'Прогноз подтвердился' : 'Prediction holds'
+          : locale === 'ru' ? 'Проверка выявила другой предел' : 'Counterfactual revealed another limit',
         tone: matches ? 'healthy' : 'warning',
       },
     })
@@ -900,6 +784,7 @@ export function App() {
     baselineNewsFeedReport.bottleneck,
     fanoutPrediction,
     fanoutPredictionRationale,
+    locale,
     recordAction,
   ])
 
@@ -917,8 +802,10 @@ export function App() {
     )
     setJudgeReport(report)
     addEvent(
-      'Design submitted',
-      `${report.score}/100 · ${report.passedCases}/${report.totalCases} cases passed`,
+      copy.designSubmitted,
+      locale === 'ru'
+        ? `${report.score}/100 · пройдено кейсов: ${report.passedCases}/${report.totalCases}`
+        : `${report.score}/100 · ${report.passedCases}/${report.totalCases} cases passed`,
       report.passed ? 'healthy' : report.score >= 60 ? 'warning' : 'critical',
     )
     const recorded = recordAction({
@@ -935,22 +822,14 @@ export function App() {
         },
       },
       timeline: {
-        title: `Design submitted · ${report.score}/100`,
-        detail: `${report.passedCases} of ${report.totalCases} cases passed`,
+        title: `${copy.designSubmitted} · ${report.score}/100`,
+        detail: locale === 'ru'
+          ? `Пройдено кейсов: ${report.passedCases} из ${report.totalCases}`
+          : `${report.passedCases} of ${report.totalCases} cases passed`,
         tone: report.passed ? 'healthy' : report.score >= 60 ? 'warning' : 'critical',
       },
     })
     const criticalEvent = recorded.events.find((event) => event.timeline?.tone === 'critical')
-    const initialFailure = recorded.initial.fault === 'none' ? null : {
-      title: recorded.initial.fault === 'cache-outage'
-        ? 'Attempt started with Redis unavailable'
-        : recorded.initial.fault === 'celebrity-spike'
-          ? 'Attempt started with a 50M-follower spike'
-          : `Attempt started with ${FAULT_LABELS[recorded.initial.fault].toLowerCase()}`,
-      detail: 'This failure was already active in the initial state.',
-      tone: 'critical' as const,
-      atMs: 0,
-    }
     const completed: ReplayAttemptV1 = {
       ...recorded,
       summary: {
@@ -961,20 +840,15 @@ export function App() {
           ...criticalEvent.timeline,
           atMs: criticalEvent.atMs,
           eventId: criticalEvent.id,
-        } : initialFailure ?? {
-          title: 'Design submitted without an injected failure',
-          detail: 'The submission captured the final architecture state.',
-          tone: 'neutral',
-          atMs: recorded.durationMs,
-        },
+        } : fallbackKeyMoment(locale, recorded.initial.fault, recorded.durationMs),
       },
     }
     try {
       replayRepository.save(completed)
       setSavedAttempts(replayRepository.list())
-      addEvent('Attempt saved', 'Replay is available in History', 'healthy')
+      addEvent(copy.attemptSaved, copy.replayInHistory, 'healthy')
     } catch {
-      addEvent('Replay not saved', 'Local storage is unavailable', 'warning')
+      addEvent(copy.replayNotSaved, copy.storageUnavailable, 'warning')
     }
     draftAttemptRef.current = null
     recordingElapsedMsRef.current = 0
@@ -984,10 +858,16 @@ export function App() {
     capacity,
     challengeId,
     componentCounts,
+    copy.attemptSaved,
+    copy.designSubmitted,
+    copy.replayInHistory,
+    copy.replayNotSaved,
+    copy.storageUnavailable,
     criticalPathConnected,
     edges.length,
     fault,
     load,
+    locale,
     nodes.length,
     replicaCounts,
     recordAction,
@@ -997,39 +877,22 @@ export function App() {
   const shareScenario = useCallback(async () => {
     const serialized = replayAttempt
       ? serializeReplayEnvelope(replayAttempt, { redactAnswers: true, pretty: true })
-      : JSON.stringify(
-      {
-        version: 1,
-        challenge: challengeId,
-        load,
-        fault,
-        capacity,
-        nodes: nodes.map((node) => ({
-          id: node.id,
-          kind: node.data.kind,
-          label: node.data.label,
-          position: node.position,
-        })),
-        edges: edges.map((edge) => ({
-          source: edge.source,
-          target: edge.target,
-        })),
-      },
-      null,
-      2,
-    )
+      : serializeScenarioSnapshot({
+          challengeId,
+          initial: toReplayInitial(nodes, edges, load, fault, capacity),
+        })
 
     try {
       await navigator.clipboard.writeText(serialized)
       addEvent(
-        replayAttempt ? 'Replay copied' : 'Scenario copied',
-        replayAttempt ? 'The full attempt is ready to import' : 'Architecture snapshot is ready to share',
+        replayAttempt ? copy.replayCopied : copy.scenarioCopied,
+        replayAttempt ? copy.replayReadyToImport : copy.snapshotReadyToShare,
         'healthy',
       )
     } catch {
-      addEvent('Share unavailable', 'Clipboard access was not granted', 'warning')
+      addEvent(copy.shareUnavailable, copy.clipboardDenied, 'warning')
     }
-  }, [addEvent, capacity, challengeId, edges, fault, load, nodes, replayAttempt])
+  }, [addEvent, capacity, challengeId, copy, edges, fault, load, nodes, replayAttempt])
 
   const openHistory = useCallback(() => {
     setChallengeOpen(false)
@@ -1087,17 +950,18 @@ export function App() {
       setSavedAttempts(replayRepository.list())
       if (replayAttempt?.id === attemptId) exitReplay()
     } catch {
-      setHistoryNotice({ message: 'Could not delete replay. Local storage is unavailable.', tone: 'error' })
-      addEvent('Could not delete replay', 'Local storage is unavailable', 'warning')
+      setHistoryNotice({ message: `${copy.deleteFailed}. ${copy.storageUnavailable}.`, tone: 'error' })
+      addEvent(copy.deleteFailed, copy.storageUnavailable, 'warning')
     }
-  }, [addEvent, exitReplay, replayAttempt?.id, replayRepository])
+  }, [addEvent, copy.deleteFailed, copy.storageUnavailable, exitReplay, replayAttempt?.id, replayRepository])
 
   const importReplay = useCallback(async (file: File) => {
     try {
       const result = parseReplayEnvelope(await file.text())
       if (!result.ok) {
-        setHistoryNotice({ message: result.error.message, tone: 'error' })
-        addEvent('Replay import failed', result.error.message, 'critical')
+        const message = replayImportErrorCopy(locale, result.error.code, result.error.message)
+        setHistoryNotice({ message, tone: 'error' })
+        addEvent(copy.importFailed, message, 'critical')
         return
       }
       replayRepository.save(verifyImportedAttempt(result.value.attempt))
@@ -1105,20 +969,20 @@ export function App() {
       setHistoryOpen(true)
       setHistoryNotice({
         message: result.migrated
-          ? 'Imported and migrated the v0.1 scenario snapshot.'
-          : 'Replay imported and saved on this device.',
+          ? copy.migratedNotice
+          : copy.importedNotice,
         tone: 'success',
       })
       addEvent(
-        result.migrated ? 'Scenario migrated' : 'Replay imported',
-        result.migrated ? 'The v0.1 snapshot is now replayable' : 'Saved to this device',
+        result.migrated ? copy.scenarioMigrated : copy.replayImported,
+        result.migrated ? copy.migratedDetail : copy.importedDetail,
         'healthy',
       )
     } catch {
-      setHistoryNotice({ message: 'The selected replay file could not be read.', tone: 'error' })
-      addEvent('Replay import failed', 'The selected file could not be read', 'critical')
+      setHistoryNotice({ message: copy.fileUnreadable, tone: 'error' })
+      addEvent(copy.importFailed, copy.fileUnreadable, 'critical')
     }
-  }, [addEvent, replayRepository])
+  }, [addEvent, copy, locale, replayRepository])
 
   const seekReplay = useCallback((cursorMs: number) => {
     if (!replayAttempt) return
@@ -1143,6 +1007,7 @@ export function App() {
 
   const interviewContext = useMemo<InterviewContext>(
     () => ({
+      locale,
       scenario: challengeId,
       loadMultiplier: load,
       fault,
@@ -1151,82 +1016,26 @@ export function App() {
       edgeCount: edges.length,
       recentEvents: events.slice(0, 5),
     }),
-    [challengeId, edges.length, events, fault, load, nodes, snapshot.metrics],
+    [challengeId, edges.length, events, fault, load, locale, nodes, snapshot.metrics],
   )
 
-  useEffect(() => {
-    if (replayAttempt) return
-    let cancelled = false
-    interviewRouter
-      .respond({ action: 'continue', context: interviewContext })
-      .then((response) => {
-        if (!cancelled) setPrompt(response.prompt)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [challengeId, fault, load, criticalPathConnected, replayAttempt])
-
-  const runInterviewAction = useCallback(
-    async (action: InterviewAction) => {
-      setInterviewBusy(true)
-      try {
-        const response = await interviewRouter.respond({
-          action,
-          answer: action === 'answer' ? answer : undefined,
-          context: interviewContext,
-        })
-        setPrompt(response.prompt)
-        setFeedback(response.message)
-        if (action === 'answer') {
-          addEvent('Answer reviewed', `Focus: ${response.focus}`, 'neutral')
-          recordAction({
-            type: 'answer.submitted',
-            source: 'interviewer',
-            payload: {
-              answer,
-              prompt,
-              feedback: response.message,
-              focus: response.focus,
-            },
-            timeline: {
-              title: 'Answer reviewed',
-              detail: `Focus: ${response.focus}`,
-              tone: 'neutral',
-            },
-          })
-          setAnswer('')
-        }
-      } finally {
-        window.setTimeout(() => setInterviewBusy(false), 180)
-      }
-    },
-    [addEvent, answer, interviewContext, prompt, recordAction],
-  )
-
-  const defendCapacity = useCallback(() => {
-    if (challengeId === 'news-feed') {
-      const tuning = normalizeNewsFeedTuning(capacity)
-      setPrompt(
-        `You chose ${tuning.strategy} fan-out, ${tuning.workers} workers, batches of ${tuning.batchSize}, ` +
-        `and ${tuning.deduplication ? 'idempotent delivery' : 'no deduplication'}. Defend the ${Math.round(newsFeedReport.cost.total)} USD/month trade-off.`,
-      )
-      setFeedback('Explain when you would move an account between write and read fan-out, and which queue-lag alarm changes that decision.')
-      setRightPanelMode('interview')
-      setInterviewerOpen(true)
-      addEvent('Design ready to defend', 'Interviewer is challenging freshness, cost, and delivery semantics', 'neutral')
-      return
-    }
-    setPrompt(
-      `You chose ${capacity.indexedLookup ? 'an indexed lookup' : 'a scan-prone lookup'}, ` +
-      `${capacity.readReplicas} read replica${capacity.readReplicas === 1 ? '' : 's'}, and a ` +
-      `${capacity.databaseProfile} database. Defend the ${Math.round(capacityReport.cost.total)} USD/month trade-off.`,
-    )
-    setFeedback('Explain which assumption you would benchmark first and what would make you reverse this decision.')
+  const openInterview = useCallback(() => {
     setRightPanelMode('interview')
     setInterviewerOpen(true)
-    addEvent('Design ready to defend', 'Interviewer is challenging the cost and bottleneck assumptions', 'neutral')
-  }, [addEvent, capacity, capacityReport.cost.total, challengeId, newsFeedReport.cost.total])
+  }, [])
+
+  const interview = useInterviewSession({
+    locale,
+    context: interviewContext,
+    questionRevision: `${locale}:${challengeId}:${fault}:${load}:${criticalPathConnected}`,
+    replayActive: Boolean(replayAttempt),
+    capacity,
+    capacityMonthlyCost: capacityReport.cost.total,
+    newsFeedMonthlyCost: newsFeedReport.cost.total,
+    addEvent,
+    recordAction,
+    openInterview,
+  })
 
   return (
     <div
@@ -1308,6 +1117,7 @@ export function App() {
           fitViewKey={replayAttempt?.id ?? `${challengeId}-live`}
           bottomOverlay={replayAttempt ? (
             <ReplayTimeline
+              locale={locale}
               cursorMs={replayCursorMs}
               durationMs={replayAttempt.durationMs}
               playing={replayPlaying}
@@ -1321,10 +1131,18 @@ export function App() {
                 dbCpu: `${Math.round(snapshot.metrics.dbCpu)}%`,
               }}
               metricLabels={{
-                throughput: activePack.telemetryLabels.throughput,
-                p99: activePack.telemetryLabels.p99,
-                errors: activePack.telemetryLabels.errorRate,
-                dbCpu: activePack.telemetryLabels.dbCpu,
+                throughput: locale === 'ru'
+                  ? challengeId === 'news-feed' ? 'Доставки' : 'Пропускная способность'
+                  : activePack.telemetryLabels.throughput,
+                p99: locale === 'ru'
+                  ? challengeId === 'news-feed' ? 'Свежесть' : 'p99'
+                  : activePack.telemetryLabels.p99,
+                errors: locale === 'ru'
+                  ? challengeId === 'news-feed' ? 'Устаревшие' : 'Ошибки'
+                  : activePack.telemetryLabels.errorRate,
+                dbCpu: locale === 'ru'
+                  ? challengeId === 'news-feed' ? 'Воркеры' : 'CPU БД'
+                  : activePack.telemetryLabels.dbCpu,
               }}
               onCursorChange={seekReplay}
               onTogglePlaying={toggleReplay}
@@ -1338,16 +1156,16 @@ export function App() {
           open={interviewerOpen}
           locale={locale}
           providerLabel={locale === 'ru' ? 'Локальный режим' : 'Local preview'}
-          prompt={prompt}
-          feedback={feedback}
-          answer={answer}
-          busy={interviewBusy}
+          prompt={interview.prompt}
+          feedback={interview.feedback}
+          answer={interview.answer}
+          busy={interview.busy}
           events={events}
-          onAnswerChange={setAnswer}
-          onSubmit={() => void runInterviewAction('answer')}
-          onHint={() => void runInterviewAction('hint')}
-          onReview={() => void runInterviewAction('review')}
-          onContinue={() => void runInterviewAction('continue')}
+          onAnswerChange={interview.setAnswer}
+          onSubmit={() => void interview.runAction('answer')}
+          onHint={() => void interview.runAction('hint')}
+          onReview={() => void interview.runAction('review')}
+          onContinue={() => void interview.runAction('continue')}
           onOpenCapacity={() => setRightPanelMode('bottleneck')}
           onClose={() => setInterviewerOpen((value) => !value)}
         />}
@@ -1365,7 +1183,7 @@ export function App() {
             onRationaleChange={setPredictionRationale}
             onCommitPrediction={commitPrediction}
             onTuningChange={changeCapacity}
-            onDefend={defendCapacity}
+            onDefend={interview.defend}
             onReset={() => changeCapacity({
               ...DEFAULT_CAPACITY_TUNING,
               pricingPackId: capacity.pricingPackId,
@@ -1392,7 +1210,7 @@ export function App() {
             onRationaleChange={setFanoutPredictionRationale}
             onCommitPrediction={commitFanoutPrediction}
             onTuningChange={changeCapacity}
-            onDefend={defendCapacity}
+            onDefend={interview.defend}
             onReset={() => changeCapacity({ ...DEFAULT_NEWS_FEED_TUNING })}
             onOpenInterviewer={() => {
               setSelectedNodeId(null)
@@ -1404,6 +1222,7 @@ export function App() {
         {historyOpen && (
           <HistoryPanel
             open
+            locale={locale}
             attempts={historyItems}
             notice={historyNotice}
             onClose={() => {
@@ -1421,9 +1240,10 @@ export function App() {
         )}
         {replayAttempt && !historyOpen && (
           <ReplayPanel
+            locale={locale}
             score={replayAttempt.summary?.score}
             passed={replayAttempt.summary?.passed}
-            keyMoment={replayKeyMoment(replayAttempt)}
+            keyMoment={replayKeyMoment(replayAttempt, locale)}
             events={replayEvents}
             cursorMs={replayCursorMs}
             activeEventId={activeReplayEvent?.id}
@@ -1446,8 +1266,12 @@ export function App() {
       />
       <div className="screen-reader-status" aria-live="polite">
         {replayAttempt
-          ? `Replay ${replayPlaying ? 'playing' : 'paused'} at ${formatClock(Math.floor(replayCursorMs / 1000))}.`
-          : `${playing ? 'Simulation running' : 'Simulation paused'}. ${snapshot.severity} state.${draftAttempt ? ' Attempt recording.' : ''}`}
+          ? locale === 'ru'
+            ? `Повтор ${replayPlaying ? 'воспроизводится' : 'приостановлен'} на ${formatClock(Math.floor(replayCursorMs / 1000))}.`
+            : `Replay ${replayPlaying ? 'playing' : 'paused'} at ${formatClock(Math.floor(replayCursorMs / 1000))}.`
+          : locale === 'ru'
+            ? `Симуляция ${playing ? 'запущена' : 'приостановлена'}. Состояние: ${snapshot.severity === 'normal' ? 'штатное' : snapshot.severity === 'degraded' ? 'деградация' : 'критическое'}.${draftAttempt ? ' Попытка записывается.' : ''}`
+            : `${playing ? 'Simulation running' : 'Simulation paused'}. ${snapshot.severity} state.${draftAttempt ? ' Attempt recording.' : ''}`}
       </div>
     </div>
   )

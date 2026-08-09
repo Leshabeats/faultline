@@ -1,5 +1,6 @@
 import type {
   FaultMode,
+  Locale,
   SimulationMetrics,
   ScenarioId,
   TimelineEvent,
@@ -8,6 +9,7 @@ import type {
 export type InterviewAction = 'continue' | 'hint' | 'review' | 'answer'
 
 export interface InterviewContext {
+  locale: Locale
   scenario: ScenarioId
   loadMultiplier: 1 | 3 | 10
   fault: FaultMode

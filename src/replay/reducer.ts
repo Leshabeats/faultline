@@ -78,6 +78,24 @@ export function reduceReplayEvent(
       break
     case 'capacity.changed':
       state.capacity = { ...event.payload.capacity }
+      if (event.payload.topology) {
+        const topologyByNodeId = new Map(
+          event.payload.topology.map((topology) => [topology.nodeId, topology]),
+        )
+        state.architecture.nodes = state.architecture.nodes.map((node) => {
+          const topology = topologyByNodeId.get(node.id)
+          return topology
+            ? {
+                ...node,
+                data: {
+                  ...node.data,
+                  replicas: topology.replicas,
+                  shards: topology.shards,
+                },
+              }
+            : node
+        })
+      }
       break
     case 'node.added':
       state.architecture.nodes = replaceById(

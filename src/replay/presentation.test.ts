@@ -57,5 +57,23 @@ describe('replay presentation', () => {
     attempt.events = []
 
     expect(replayKeyMoment(attempt)).toBe('Attempt started with Redis unavailable')
+    expect(replayKeyMoment(attempt, 'ru')).toBe('Попытка началась при недоступном Redis')
+  })
+
+  it('localizes metadata from previously saved English replays at presentation time', () => {
+    const attempt = createTestAttempt()
+    attempt.summary = {
+      score: 76,
+      maxScore: 100,
+      passed: false,
+      keyMoment: {
+        title: 'Attempt started with Redis unavailable',
+        detail: 'This failure was already active in the initial state.',
+        tone: 'critical',
+        atMs: 0,
+      },
+    }
+
+    expect(replayKeyMoment(attempt, 'ru')).toBe('Попытка началась при недоступном Redis')
   })
 })

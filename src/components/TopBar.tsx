@@ -116,9 +116,9 @@ export function TopBar({
           </div>
         )}
       </div>
-      <span className="interview-timer" aria-label="Interview timer">
-        {replayMode && <span className="replay-mode-label">Replay</span>}
-        {recording && !replayMode && <span className="recording-mode-label"><i aria-hidden="true" /> Recording</span>}
+      <span className="interview-timer" aria-label={locale === 'ru' ? 'Таймер интервью' : 'Interview timer'}>
+        {replayMode && <span className="replay-mode-label">{locale === 'ru' ? 'Повтор' : 'Replay'}</span>}
+        {recording && !replayMode && <span className="recording-mode-label"><i aria-hidden="true" /> {locale === 'ru' ? 'Запись' : 'Recording'}</span>}
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <circle cx="12" cy="12" r="9" />
           <path d="M12 7v5l3 2" />
@@ -167,7 +167,7 @@ export function TopBar({
         <button
           type="button"
           className="icon-button locale-button"
-          aria-label={locale === 'ru' ? 'Switch to English' : 'Переключить на русский'}
+          aria-label={locale === 'ru' ? 'Переключить на английский' : 'Switch to Russian'}
           title={locale === 'ru' ? 'English' : 'Русский'}
           onClick={() => onLocaleChange(locale === 'ru' ? 'en' : 'ru')}
         >

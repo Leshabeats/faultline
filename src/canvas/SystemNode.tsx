@@ -1,10 +1,10 @@
 import { Handle, Position, type NodeProps } from '@xyflow/react'
 import { StatefulIcon } from '../components/icons/StatefulIcon'
+import { normalizeNodeTopology } from '../domain/topology'
 import type { SystemFlowNode } from './types'
 
 export function SystemNode({ data, selected }: NodeProps<SystemFlowNode>) {
-  const replicas = Math.max(1, Math.floor(data.replicas ?? 1))
-  const shards = Math.max(1, Math.floor(data.shards ?? 1))
+  const { replicas, shards } = normalizeNodeTopology(data.kind, data)
   return (
     <article
       className={`system-node health-${data.health} ${selected ? 'is-selected' : ''} ${replicas > 1 ? 'has-replicas' : ''}`}
@@ -22,7 +22,7 @@ export function SystemNode({ data, selected }: NodeProps<SystemFlowNode>) {
         {data.detail}
       </span>
       {(replicas > 1 || shards > 1) && (
-        <span className="node-topology-badges" aria-label={`${replicas} replicas, ${shards} shards`}>
+        <span className="node-topology-badges" aria-label={`${replicas}× · ${shards}S`}>
           {replicas > 1 && <b>{replicas}×</b>}
           {shards > 1 && <b>{shards}S</b>}
         </span>

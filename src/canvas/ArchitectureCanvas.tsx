@@ -18,6 +18,7 @@ import { SystemNode } from './SystemNode'
 import { TrafficEdge } from './TrafficEdge'
 import type { SystemFlowEdge, SystemFlowNode } from './types'
 import type { FaultMode } from '../domain/system'
+import type { NodeTopology } from '../domain/topology'
 import { useEffect, useRef, type ReactNode } from 'react'
 
 const nodeTypes = { system: SystemNode }
@@ -41,7 +42,7 @@ interface ArchitectureCanvasProps {
   onAddNode: (kind: ComponentKind) => void
   onNodeSelected: (node: SystemFlowNode) => void
   onInspectorClose: () => void
-  onTopologyChange: (nodeId: string, topology: { replicas: number; shards: number }) => void
+  onTopologyChange: (nodeId: string, topology: NodeTopology) => void
   onLoadChange: (load: LoadMultiplier) => void
   onFaultChange: (fault: FaultMode) => void
   readOnly?: boolean
@@ -122,7 +123,7 @@ export function ArchitectureCanvas({
           edgesFocusable={!readOnly}
           deleteKeyCode={readOnly ? null : ['Backspace', 'Delete']}
           aria-label={readOnly
-            ? locale === 'ru' ? `Replay: ${canvasLabel}` : `Read-only ${canvasLabel} replay`
+            ? locale === 'ru' ? `Повтор: ${canvasLabel}` : `Read-only ${canvasLabel} replay`
             : locale === 'ru' ? `Редактируемая схема: ${canvasLabel}` : `Editable ${canvasLabel}`}
         >
           <Background

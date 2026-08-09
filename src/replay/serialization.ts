@@ -161,6 +161,17 @@ const isPartialNodeData = (value: unknown) => {
   )
 }
 
+const isTopologyPatch = (value: unknown) =>
+  isRecord(value) &&
+  hasOnlyKeys(value, ['nodeId', 'replicas', 'shards']) &&
+  isBoundedString(value.nodeId) &&
+  isNonNegativeInteger(value.replicas) &&
+  value.replicas >= 1 &&
+  value.replicas <= 16 &&
+  isNonNegativeInteger(value.shards) &&
+  value.shards >= 1 &&
+  value.shards <= 64
+
 const isNode = (value: unknown): value is ReplayNodeV1 =>
   isRecord(value) &&
   hasOnlyKeys(value, ['id', 'type', 'position', 'data']) &&
@@ -290,8 +301,14 @@ const isEvent = (value: unknown): value is ReplayEventV1 => {
       )
     case 'capacity.changed':
       return (
-        hasOnlyKeys(payload, ['capacity']) &&
-        isCapacityTuning(payload.capacity)
+        hasOnlyKeys(payload, ['capacity', 'topology']) &&
+        isCapacityTuning(payload.capacity) &&
+        (payload.topology === undefined || (
+          Array.isArray(payload.topology) &&
+          payload.topology.length <= REPLAY_IMPORT_LIMITS.maxNodes &&
+          payload.topology.every(isTopologyPatch) &&
+          new Set(payload.topology.map((patch) => patch.nodeId)).size === payload.topology.length
+        ))
       )
     case 'node.added':
       return hasOnlyKeys(payload, ['node']) && isNode(payload.node)
@@ -417,6 +434,8 @@ interface LegacyScenarioNode {
   kind: ComponentKind
   label: string
   position: { x: number; y: number }
+  replicas?: number
+  shards?: number
 }
 
 interface LegacyScenarioEdge {
@@ -439,7 +458,13 @@ const isLegacyScenarioNode = (value: unknown): value is LegacyScenarioNode =>
   isBoundedString(value.id) &&
   componentKinds.includes(value.kind as ComponentKind) &&
   isBoundedString(value.label) &&
-  isPosition(value.position)
+  isPosition(value.position) &&
+  (value.replicas === undefined || (
+    isNonNegativeInteger(value.replicas) && value.replicas >= 1 && value.replicas <= 16
+  )) &&
+  (value.shards === undefined || (
+    isNonNegativeInteger(value.shards) && value.shards >= 1 && value.shards <= 64
+  ))
 
 const isLegacyScenarioEdge = (value: unknown): value is LegacyScenarioEdge =>
   isRecord(value) &&
@@ -482,6 +507,8 @@ const migrateLegacyScenario = (
       data: {
         kind: node.kind,
         label: node.label,
+        ...(node.replicas !== undefined ? { replicas: node.replicas } : {}),
+        ...(node.shards !== undefined ? { shards: node.shards } : {}),
       },
     })),
     edges: scenario.edges.map((edge, index) => ({
