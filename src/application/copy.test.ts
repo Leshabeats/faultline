@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
   bottleneckCopy,
+  capacityAssumptionsCopy,
   defenseCopy,
   fallbackKeyMoment,
+  newsFeedAssumptionsCopy,
   replayImportErrorCopy,
+  scoreDimensionCopy,
 } from './copy'
-import { DEFAULT_CAPACITY_TUNING } from '../capacity/model'
+import { DEFAULT_CAPACITY_TUNING, estimateCapacity } from '../capacity/model'
+import { DEFAULT_NEWS_FEED_TUNING, estimateNewsFeed } from '../newsFeed/model'
 
 describe('localized application copy', () => {
   it('builds the URL-shortener defense entirely in Russian', () => {
@@ -36,5 +40,31 @@ describe('localized application copy', () => {
     expect(bottleneckCopy('ru', 'connection-pool')).toBe('пул соединений')
     expect(bottleneckCopy('ru', 'timeline-cache')).toBe('кеш лент')
     expect(bottleneckCopy('en', 'connection-pool')).toBe('connection pool')
+  })
+
+  it('builds Russian capacity assumptions from structured report fields', () => {
+    const report = estimateCapacity({
+      loadMultiplier: 10,
+      fault: 'none',
+      tuning: DEFAULT_CAPACITY_TUNING,
+      componentCounts: { database: 4 },
+    })
+
+    const assumptions = capacityAssumptionsCopy('ru', report)
+    expect(assumptions.join(' ')).toContain('4 шард. БД')
+    expect(assumptions.join(' ')).not.toContain('database shard')
+  })
+
+  it('localizes structured news-feed assumptions and score dimensions', () => {
+    const report = estimateNewsFeed({
+      loadMultiplier: 10,
+      fault: 'celebrity-spike',
+      tuning: DEFAULT_NEWS_FEED_TUNING,
+    })
+
+    const assumptions = newsFeedAssumptionsCopy('ru', report, DEFAULT_NEWS_FEED_TUNING)
+    expect(assumptions.join(' ')).toContain('50 миллионам подписчиков')
+    expect(assumptions.join(' ')).not.toContain('Worker throughput')
+    expect(scoreDimensionCopy('ru', 'resilience', 'Resilience')).toBe('Устойчивость')
   })
 })

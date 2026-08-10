@@ -1,4 +1,8 @@
 import type { CapacityTuning, ComponentKind, FaultMode } from '../domain/system'
+import {
+  alignDatabaseReplication,
+  databaseReplicationMatches,
+} from '../domain/topology'
 import { cloneInitialReplayState } from './reducer'
 import {
   REPLAY_SCHEMA,
@@ -406,6 +410,12 @@ export function validateReplayAttempt(value: unknown): value is ReplayAttemptV1 
     return false
   }
 
+  const initial = value.initial as unknown as ReplayAttemptV1['initial']
+  if (!databaseReplicationMatches(
+    initial.architecture.nodes,
+    initial.capacity?.readReplicas ?? 0,
+  )) return false
+
   const events = value.events as ReplayEventV1[]
   return (
     new Set(events.map((event) => event.id)).size === events.length &&
@@ -499,8 +509,7 @@ const migrateLegacyScenario = (
   source: string,
 ): ReplayEnvelopeV1 => {
   const timestamp = '1970-01-01T00:00:00.000Z'
-  const architecture: ReplayArchitectureV1 = {
-    nodes: scenario.nodes.map((node) => ({
+  const nodes = scenario.nodes.map((node) => ({
       id: node.id,
       type: 'system',
       position: { ...node.position },
@@ -510,7 +519,12 @@ const migrateLegacyScenario = (
         ...(node.replicas !== undefined ? { replicas: node.replicas } : {}),
         ...(node.shards !== undefined ? { shards: node.shards } : {}),
       },
-    })),
+    })) satisfies ReplayNodeV1[]
+  const architecture: ReplayArchitectureV1 = {
+    nodes: alignDatabaseReplication(
+      nodes,
+      scenario.capacity?.readReplicas ?? 0,
+    ),
     edges: scenario.edges.map((edge, index) => ({
       id: `imported-edge-${index}-${edge.source}-${edge.target}`,
       type: 'traffic',

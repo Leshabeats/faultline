@@ -3,6 +3,8 @@ import type {
   ComponentKind,
   FaultMode,
   Locale,
+  CapacityReport,
+  NewsFeedReport,
   ScenarioId,
 } from '../domain/system'
 import { faultLabels, componentLabels } from '../i18n'
@@ -125,6 +127,56 @@ export const bottleneckCopy = (locale: Locale, value: string) => {
     'timeline-cache': 'кеш лент',
     'post-store': 'хранилище постов',
   } as Record<string, string>)[value] ?? value.replace(/-/g, ' ')
+}
+
+export const scoreDimensionCopy = (locale: Locale, dimension: string, fallback: string) => {
+  if (locale === 'en') return fallback
+  return ({
+    reliability: 'Надёжность',
+    performance: 'Производительность',
+    freshness: 'Свежесть',
+    resilience: 'Устойчивость',
+    clarity: 'Ясность',
+  } as Record<string, string>)[dimension] ?? fallback
+}
+
+export function capacityAssumptionsCopy(
+  locale: Locale,
+  report: CapacityReport,
+) {
+  if (locale === 'en') return report.assumptions
+  const verified = report.calibration.pricing.status === 'verified-rates'
+  const capacityEvidence = report.calibration.capacity.status === 'mixed-measured'
+    ? 'локальные замеры'
+    : 'эталонная оценка'
+  return [
+    '100 созданий ссылок/с, хранение 5 лет и 200 Б сырых данных на запись.',
+    `Основа профиля ёмкости: ${capacityEvidence}; значения производительности остаются учебной моделью.`,
+    'Реплика чтения даёт 85% ёмкости основной БД.',
+    `${report.workload.databaseShards} шард. БД делят логический датасет; каждый слой реплик хранит одну полную копию разделённых данных.`,
+    verified
+      ? 'Тарифы AWS проверены; объёмы потребления рассчитаны. Без скидок и free tier.'
+      : 'Учебные цены нужны для сравнения решений и не являются тарифом облачного провайдера.',
+    verified
+      ? 'Не учтены трафик, бэкапы, observability, NAT, публичные IPv4, поддержка и налоги.'
+      : 'Хранилище рассчитано по учебной ставке за GiB-месяц.',
+  ]
+}
+
+export function newsFeedAssumptionsCopy(
+  locale: Locale,
+  report: NewsFeedReport,
+  tuning: CapacityTuning,
+) {
+  if (locale === 'en') return report.assumptions
+  const values = normalizeNewsFeedTuning(tuning)
+  return [
+    'Обычный пост в среднем доставляется 240 подписчикам.',
+    `Пропускная способность воркеров: ${values.workers} ворк. × пакет ${values.batchSize} × 80 пакетов/с.`,
+    'В кейсе скачка один пост направляется 50 миллионам подписчиков.',
+    'Месячная стоимость очереди учитывает выбранную штатную нагрузку за 30 дней и один скачок знаменитости в день.',
+    'Стоимость — прозрачная учебная оценка, а не предложение облачного провайдера.',
+  ]
 }
 
 export function replayImportErrorCopy(

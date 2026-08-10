@@ -96,7 +96,7 @@ describe('estimateCapacity', () => {
     expect(locallyCalibrated.utilization.database).toBeGreaterThan(reference.utilization.database)
   })
 
-  it('uses database shards to split capacity and multiply infrastructure cost', () => {
+  it('uses database shards to split capacity without duplicating the logical dataset', () => {
     const singleShard = estimateCapacity({
       loadMultiplier: 10,
       fault: 'none',
@@ -112,7 +112,8 @@ describe('estimateCapacity', () => {
 
     expect(fourShards.utilization.database).toBeLessThan(singleShard.utilization.database)
     expect(fourShards.cost.databaseCompute).toBeGreaterThan(singleShard.cost.databaseCompute)
-    expect(fourShards.cost.databaseStorage).toBeGreaterThan(singleShard.cost.databaseStorage)
+    expect(fourShards.workload.rawStorageGiB).toBe(singleShard.workload.rawStorageGiB)
+    expect(fourShards.cost.databaseStorage).toBe(singleShard.cost.databaseStorage)
   })
 
   it('does not mistake cache shards for outage-surviving replicas', () => {

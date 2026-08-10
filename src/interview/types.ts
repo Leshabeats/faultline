@@ -31,8 +31,11 @@ export interface InterviewResponse {
   focus: string
 }
 
-export interface InterviewProvider {
+export interface InterviewResponder {
+  respond(request: InterviewRequest, providerId?: string): Promise<InterviewResponse>
+}
+
+export interface InterviewProvider extends InterviewResponder {
   id: string
   label: string
-  respond(request: InterviewRequest): Promise<InterviewResponse>
 }

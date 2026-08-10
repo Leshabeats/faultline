@@ -174,20 +174,32 @@ export function useArchitectureEditor({
     const node = nodes.find((item) => item.id === nodeId)
     if (!node) return
     const { replicas, shards } = normalizeNodeTopology(node.data.kind, input)
-    setNodes((current) => current.map((item) => item.id === nodeId
-      ? { ...item, data: { ...item.data, replicas, shards } }
-      : item))
 
     if (node.data.kind === 'database') {
       const readReplicas = databaseReadReplicas({ replicas })
       const nextCapacity = { ...capacity, readReplicas }
+      const topology = nodes
+        .filter((item) => item.data.kind === 'database')
+        .map((item) => ({
+          nodeId: item.id,
+          replicas,
+          shards: item.id === nodeId
+            ? shards
+            : normalizeNodeTopology('database', item.data).shards,
+        }))
+      setNodes((current) => current.map((item) => {
+        const patch = topology.find((candidate) => candidate.nodeId === item.id)
+        return patch
+          ? { ...item, data: { ...item.data, replicas: patch.replicas, shards: patch.shards } }
+          : item
+      }))
       setCapacity(nextCapacity)
       recordAction({
         type: 'capacity.changed',
         source: 'user',
         payload: {
           capacity: nextCapacity,
-          topology: [{ nodeId, replicas, shards }],
+          topology,
         },
         timeline: {
           title: locale === 'ru' ? 'Репликация БД обновлена' : 'Database replication updated',
@@ -197,6 +209,10 @@ export function useArchitectureEditor({
           tone: 'neutral',
         },
       })
+    } else {
+      setNodes((current) => current.map((item) => item.id === nodeId
+        ? { ...item, data: { ...item.data, replicas, shards } }
+        : item))
     }
 
     addEvent(

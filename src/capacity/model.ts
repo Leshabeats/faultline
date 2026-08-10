@@ -151,8 +151,10 @@ export function estimateCapacity(input: CapacityModelInput): CapacityReport {
       queueNodes * rates.queueNodeMonthly
     databaseCompute = rates.databaseNodeMonthly[tuning.databaseProfile] *
       (1 + tuning.readReplicas * 0.82) * databaseShards
+    // Shards partition the logical dataset. Together their primary volumes
+    // still store one dataset; each read-replica layer adds one more copy.
     databaseStorage = storageWithIndexes * rates.databaseStorageGiBMonth *
-      (1 + tuning.readReplicas) * databaseShards
+      (1 + tuning.readReplicas)
   } else {
     const rates = pricingPack.rates
     const secondsPerMonth = rates.hoursPerMonth * 60 * 60
@@ -174,7 +176,7 @@ export function estimateCapacity(input: CapacityModelInput): CapacityReport {
     databaseCompute = rates.databaseNodeHour[tuning.databaseProfile] *
       rates.hoursPerMonth * (1 + tuning.readReplicas) * databaseShards
     databaseStorage = storageWithIndexes * rates.databaseStorageGiBMonth *
-      (1 + tuning.readReplicas) * databaseShards
+      (1 + tuning.readReplicas)
   }
   const total = edgeAndService + cacheAndQueue + databaseCompute + databaseStorage
   const monthlyRedirects = redirectRps * SECONDS_PER_MONTH
@@ -219,6 +221,7 @@ export function estimateCapacity(input: CapacityModelInput): CapacityReport {
       createRps,
       effectiveCacheHitRate: round(effectiveCacheHitRate, 3),
       databaseReadRps: round(databaseReadRps),
+      databaseShards,
       retainedRows: round(retainedRows),
       rawStorageGiB: round(rawStorageGiB),
     },
@@ -250,7 +253,7 @@ export function estimateCapacity(input: CapacityModelInput): CapacityReport {
       '100 creates/s, five-year retention, and 200 B of raw link data per row.',
       `Capacity: ${benchmarkPack.label}; ${profile.authority} ${tuning.databaseProfile} database baseline.`,
       'Replica reads are 85% as efficient as primary reads.',
-      `${databaseShards} database shard${databaseShards === 1 ? '' : 's'}; each shard carries the selected replica profile and storage copy.`,
+      `${databaseShards} database shard${databaseShards === 1 ? '' : 's'} split the logical dataset; each read-replica layer copies the full partitioned dataset once.`,
       pricingPack.rates.mode === 'aws-on-demand'
         ? 'AWS rates are verified; usage quantities remain modeled. On-demand only, 30-day month, no free tier or discounts.'
         : 'Component prices are scenario reference units, not a cloud-provider quote.',

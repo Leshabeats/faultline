@@ -52,6 +52,7 @@ import {
   normalizeNewsFeedTuning,
 } from './newsFeed/model'
 import type { InterviewContext } from './interview/types'
+import { interviewRouter } from './interview/router'
 import { judgeNewsFeed, judgeUrlShortener, type JudgeReport } from './judge'
 import { computeSimulation, formatMetric } from './simulation/engine'
 import { analyzeTopology } from './simulation/topology'
@@ -99,6 +100,10 @@ const initialEvents = (locale: Locale): TimelineEvent[] => [
     timestamp: '18:41',
     title: locale === 'ru' ? 'Схема готова' : 'Architecture ready',
     detail: locale === 'ru' ? 'Штатная нагрузка 1×, сбоев нет' : 'Healthy 1× baseline, no faults',
+    translations: {
+      en: { title: 'Architecture ready', detail: 'Healthy 1× baseline, no faults' },
+      ru: { title: 'Схема готова', detail: 'Штатная нагрузка 1×, сбоев нет' },
+    },
     tone: 'healthy',
   },
 ]
@@ -325,6 +330,7 @@ export function App() {
       title: string,
       detail: string,
       tone: TimelineEvent['tone'] = 'neutral',
+      translations?: TimelineEvent['translations'],
     ) => {
       setEvents((current) => [
         {
@@ -332,6 +338,7 @@ export function App() {
           timestamp: formatClock(elapsedSeconds),
           title,
           detail,
+          ...(translations ? { translations } : {}),
           tone,
         },
         ...current,
@@ -652,6 +659,10 @@ export function App() {
   const switchChallenge = useCallback((nextId: ScenarioId) => {
     const pack = getChallengePack(nextId)
     const localizedDefinition = localizeChallengeDefinition(pack.definition, locale)
+    const translatedDefinitions = {
+      en: localizeChallengeDefinition(pack.definition, 'en'),
+      ru: localizeChallengeDefinition(pack.definition, 'ru'),
+    }
     setChallengeId(nextId)
     setNodes(clonePackNodes(pack))
     setEdges(clonePackEdges(pack))
@@ -689,6 +700,16 @@ export function App() {
         ? `${localizedDefinition.title}: задача загружена`
         : `${localizedDefinition.title} loaded`,
       detail: localizedDefinition.summary,
+      translations: {
+        en: {
+          title: `${translatedDefinitions.en.title} loaded`,
+          detail: translatedDefinitions.en.summary,
+        },
+        ru: {
+          title: `${translatedDefinitions.ru.title}: задача загружена`,
+          detail: translatedDefinitions.ru.summary,
+        },
+      },
       tone: 'neutral',
     }])
     draftAttemptRef.current = null
@@ -702,12 +723,29 @@ export function App() {
     const matches = bottleneckPrediction === capacityReport.bottleneck
     const estimatedBottleneck = bottleneckCopy(locale, capacityReport.bottleneck)
     const predictedBottleneck = bottleneckCopy(locale, bottleneckPrediction)
+    const estimatedByLocale = {
+      en: bottleneckCopy('en', capacityReport.bottleneck),
+      ru: bottleneckCopy('ru', capacityReport.bottleneck),
+    }
+    const predictionTranslations: NonNullable<TimelineEvent['translations']> = {
+      en: {
+        title: 'Bottleneck prediction committed',
+        detail: matches
+          ? 'Prediction matches the estimated model'
+          : `Model points to ${estimatedByLocale.en}`,
+      },
+      ru: {
+        title: 'Прогноз узкого места зафиксирован',
+        detail: matches
+          ? 'Прогноз совпадает с оценочной моделью'
+          : `Модель указывает на ${estimatedByLocale.ru}`,
+      },
+    }
     addEvent(
-      locale === 'ru' ? 'Прогноз узкого места зафиксирован' : 'Bottleneck prediction committed',
-      matches
-        ? locale === 'ru' ? 'Прогноз совпадает с оценочной моделью' : 'Prediction matches the estimated model'
-        : locale === 'ru' ? `Модель указывает на ${estimatedBottleneck}` : `Model points to ${estimatedBottleneck}`,
+      predictionTranslations[locale].title,
+      predictionTranslations[locale].detail,
       matches ? 'healthy' : 'warning',
+      predictionTranslations,
     )
     recordAction({
       type: 'answer.submitted',
@@ -747,14 +785,29 @@ export function App() {
     const matches = fanoutPrediction === baselineNewsFeedReport.bottleneck
     const estimatedBottleneck = bottleneckCopy(locale, baselineNewsFeedReport.bottleneck)
     const predictedBottleneck = bottleneckCopy(locale, fanoutPrediction)
+    const estimatedByLocale = {
+      en: bottleneckCopy('en', baselineNewsFeedReport.bottleneck),
+      ru: bottleneckCopy('ru', baselineNewsFeedReport.bottleneck),
+    }
+    const predictionTranslations: NonNullable<TimelineEvent['translations']> = {
+      en: {
+        title: 'Spike prediction committed',
+        detail: matches
+          ? 'Prediction matches the estimated fan-out model'
+          : `Model points to ${estimatedByLocale.en}`,
+      },
+      ru: {
+        title: 'Прогноз скачка зафиксирован',
+        detail: matches
+          ? 'Прогноз совпадает с оценочной fan-out моделью'
+          : `Модель указывает на ${estimatedByLocale.ru}`,
+      },
+    }
     addEvent(
-      locale === 'ru' ? 'Прогноз скачка зафиксирован' : 'Spike prediction committed',
-      matches
-        ? locale === 'ru' ? 'Прогноз совпадает с оценочной fan-out моделью' : 'Prediction matches the estimated fan-out model'
-        : locale === 'ru'
-          ? `Модель указывает на ${estimatedBottleneck}`
-          : `Model points to ${estimatedBottleneck}`,
+      predictionTranslations[locale].title,
+      predictionTranslations[locale].detail,
       matches ? 'healthy' : 'warning',
+      predictionTranslations,
     )
     recordAction({
       type: 'answer.submitted',
@@ -801,12 +854,21 @@ export function App() {
       { simulate: (input) => computeSimulation({ ...input, scenario: challengeId, capacity }) },
     )
     setJudgeReport(report)
+    const submissionTranslations: NonNullable<TimelineEvent['translations']> = {
+      en: {
+        title: applicationCopy.en.designSubmitted,
+        detail: `${report.score}/100 · ${report.passedCases}/${report.totalCases} cases passed`,
+      },
+      ru: {
+        title: applicationCopy.ru.designSubmitted,
+        detail: `${report.score}/100 · пройдено кейсов: ${report.passedCases}/${report.totalCases}`,
+      },
+    }
     addEvent(
-      copy.designSubmitted,
-      locale === 'ru'
-        ? `${report.score}/100 · пройдено кейсов: ${report.passedCases}/${report.totalCases}`
-        : `${report.score}/100 · ${report.passedCases}/${report.totalCases} cases passed`,
+      submissionTranslations[locale].title,
+      submissionTranslations[locale].detail,
       report.passed ? 'healthy' : report.score >= 60 ? 'warning' : 'critical',
+      submissionTranslations,
     )
     const recorded = recordAction({
       type: 'design.submitted',
@@ -846,9 +908,27 @@ export function App() {
     try {
       replayRepository.save(completed)
       setSavedAttempts(replayRepository.list())
-      addEvent(copy.attemptSaved, copy.replayInHistory, 'healthy')
+      addEvent(copy.attemptSaved, copy.replayInHistory, 'healthy', {
+        en: {
+          title: applicationCopy.en.attemptSaved,
+          detail: applicationCopy.en.replayInHistory,
+        },
+        ru: {
+          title: applicationCopy.ru.attemptSaved,
+          detail: applicationCopy.ru.replayInHistory,
+        },
+      })
     } catch {
-      addEvent(copy.replayNotSaved, copy.storageUnavailable, 'warning')
+      addEvent(copy.replayNotSaved, copy.storageUnavailable, 'warning', {
+        en: {
+          title: applicationCopy.en.replayNotSaved,
+          detail: applicationCopy.en.storageUnavailable,
+        },
+        ru: {
+          title: applicationCopy.ru.replayNotSaved,
+          detail: applicationCopy.ru.storageUnavailable,
+        },
+      })
     }
     draftAttemptRef.current = null
     recordingElapsedMsRef.current = 0
@@ -1025,6 +1105,7 @@ export function App() {
   }, [])
 
   const interview = useInterviewSession({
+    interviewer: interviewRouter,
     locale,
     context: interviewContext,
     questionRevision: `${locale}:${challengeId}:${fault}:${load}:${criticalPathConnected}`,

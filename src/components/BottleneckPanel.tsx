@@ -24,6 +24,7 @@ import {
   resolveBenchmarkPack,
   resolvePricingPack,
 } from '../capacity/calibration'
+import { capacityAssumptionsCopy } from '../application/copy'
 
 export type BottleneckPrediction = BottleneckKind
 
@@ -318,7 +319,10 @@ export function BottleneckPanel({
               <SegmentedControl
                 label={ru ? 'Цены' : 'Pricing'}
                 value={report.calibration.pricing.id}
-                options={pricingPackOptions}
+                options={pricingPackOptions.map((option) => ({
+                  ...option,
+                  label: ru && option.value === 'reference-2026.08' ? 'Учебные' : option.label,
+                }))}
                 onChange={(pricingPackId) => onTuningChange({ ...tuning, pricingPackId })}
               />
               <div className="calibration-evidence">
@@ -331,7 +335,9 @@ export function BottleneckPanel({
                   </strong>
                   <small>
                     {pricingPack.status === 'verified-rates'
-                      ? `${pricingPack.region} · checked ${pricingPack.checkedAt} · ${pricingPack.sources.length} sources`
+                      ? ru
+                        ? `${pricingPack.region} · проверено ${pricingPack.checkedAt} · источников: ${pricingPack.sources.length}`
+                        : `${pricingPack.region} · checked ${pricingPack.checkedAt} · ${pricingPack.sources.length} sources`
                       : ru ? 'Учебная база · без тарифа провайдера' : 'Training baseline · no provider rate card'}
                   </small>
                 </span>
@@ -339,7 +345,12 @@ export function BottleneckPanel({
               <SegmentedControl
                 label={ru ? 'Ёмкость' : 'Capacity'}
                 value={report.calibration.capacity.id}
-                options={benchmarkPackOptions}
+                options={benchmarkPackOptions.map((option) => ({
+                  ...option,
+                  label: ru
+                    ? option.value === 'local-m1-pro-2026.08' ? 'Локальные замеры' : 'Оценка'
+                    : option.label,
+                }))}
                 onChange={(benchmarkPackId) => onTuningChange({ ...tuning, benchmarkPackId })}
               />
               <div className="calibration-evidence is-benchmark">
@@ -436,7 +447,7 @@ export function BottleneckPanel({
                 <div><dt>{ru ? 'Сырые данные' : 'Raw storage'}</dt><dd>{(report.workload.rawStorageGiB / 1024).toFixed(1)} TiB</dd></div>
               </dl>
               <ul>
-                {report.assumptions.map((assumption) => <li key={assumption}>{assumption}</li>)}
+                {capacityAssumptionsCopy(locale, report).map((assumption) => <li key={assumption}>{assumption}</li>)}
               </ul>
               {pricingPack.sources.length > 0 && (
                 <div className="calibration-sources">

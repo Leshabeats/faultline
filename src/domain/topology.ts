@@ -72,3 +72,26 @@ export const databaseReadReplicas = (
 ): ReadReplicaCount => Math.min(2, Math.max(0, topology.replicas - 1)) as ReadReplicaCount
 
 export const databaseReplicas = (readReplicas: ReadReplicaCount) => readReplicas + 1
+
+export function databaseReplicationMatches<Node extends TopologyNode>(
+  nodes: readonly Node[],
+  readReplicas: ReadReplicaCount,
+) {
+  const replicas = databaseReplicas(readReplicas)
+  return nodes.every((node) => node.data.kind !== 'database' ||
+    normalizeNodeTopology('database', node.data).replicas === replicas)
+}
+
+/**
+ * CapacityTuning owns the global database read-replica policy. Keep every
+ * database node aligned so canvas, replay, judging, and cost model one system.
+ */
+export function alignDatabaseReplication<Node extends TopologyNode>(
+  nodes: readonly Node[],
+  readReplicas: ReadReplicaCount,
+): Node[] {
+  const replicas = databaseReplicas(readReplicas)
+  return nodes.map((node) => node.data.kind === 'database'
+    ? { ...node, data: { ...node.data, replicas } }
+    : node) as Node[]
+}

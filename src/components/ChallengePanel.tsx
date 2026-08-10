@@ -4,6 +4,7 @@ import type { ChallengeDefinition } from '../challenges/types'
 import type { JudgeReport } from '../judge'
 import type { Locale } from '../domain/system'
 import { localizeChallengeDefinition } from '../i18n'
+import { scoreDimensionCopy } from '../application/copy'
 
 const FOCUSABLE_SELECTOR = [
   'a[href]',
@@ -194,7 +195,7 @@ export function ChallengePanel({
           </ol>
         </section>
         {report && (
-          <section className="judge-report" aria-live="polite" aria-label="Submission result">
+          <section className="judge-report" aria-live="polite" aria-label={ru ? 'Результат отправки решения' : 'Submission result'}>
             <div className="judge-score">
               <span><Trophy size={17} /> {ru ? 'Результат' : 'Submission'}</span>
               <strong>{report.score}<small>/100</small></strong>
@@ -203,7 +204,7 @@ export function ChallengePanel({
             <div className="judge-breakdown">
               {report.scoreBreakdown.map((item) => (
                 <div key={item.dimension}>
-                  <span>{item.label}</span>
+                  <span>{scoreDimensionCopy(locale, item.dimension, item.label)}</span>
                   <strong>{item.points}<small>/{item.maxPoints}</small></strong>
                 </div>
               ))}

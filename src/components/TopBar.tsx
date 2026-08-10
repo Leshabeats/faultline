@@ -85,7 +85,7 @@ export function TopBar({
           {challengeTitle} <ChevronDown size={16} />
         </button>
         {challengeMenuOpen && !replayMode && (
-          <div className="challenge-menu" role="menu" aria-label="Choose a challenge">
+          <div className="challenge-menu" role="menu" aria-label={locale === 'ru' ? 'Выбрать задачу' : 'Choose a challenge'}>
             <span>{text.challenges}</span>
             {challengeOptions.map((option) => (
               <button

@@ -161,6 +161,7 @@ export interface CapacityReport {
     createRps: number
     effectiveCacheHitRate: number
     databaseReadRps: number
+    databaseShards: number
     retainedRows: number
     rawStorageGiB: number
   }
@@ -201,6 +202,7 @@ export interface TimelineEvent {
   timestamp: string
   title: string
   detail: string
+  translations?: Record<Locale, { title: string; detail: string }>
   tone: 'neutral' | 'healthy' | 'warning' | 'critical'
 }
 

@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CapacityTuning, Locale, TimelineEvent } from '../domain/system'
-import { interviewRouter } from '../interview/router'
-import type { InterviewAction, InterviewContext } from '../interview/types'
+import type {
+  InterviewAction,
+  InterviewContext,
+  InterviewResponder,
+} from '../interview/types'
 import type { ReplayEventContentV1 } from '../replay'
 import { applicationCopy, defenseCopy } from './copy'
 
 interface UseInterviewSessionInput {
+  interviewer: InterviewResponder
   locale: Locale
   context: InterviewContext
   questionRevision: string
@@ -13,7 +17,12 @@ interface UseInterviewSessionInput {
   capacity: CapacityTuning
   capacityMonthlyCost: number
   newsFeedMonthlyCost: number
-  addEvent: (title: string, detail: string, tone?: TimelineEvent['tone']) => void
+  addEvent: (
+    title: string,
+    detail: string,
+    tone?: TimelineEvent['tone'],
+    translations?: TimelineEvent['translations'],
+  ) => void
   recordAction: (event: ReplayEventContentV1) => unknown
   openInterview: () => void
 }
@@ -24,6 +33,7 @@ const initialPrompt = (locale: Locale) => locale === 'ru'
 
 /** Owns provider interaction, answer recording, and defense prompts. */
 export function useInterviewSession({
+  interviewer,
   locale,
   context,
   questionRevision,
@@ -51,7 +61,7 @@ export function useInterviewSession({
     if (replayActive) return
     let cancelled = false
     setFeedback('')
-    interviewRouter
+    interviewer
       .respond({ action: 'continue', context: contextRef.current })
       .then((response) => {
         if (!cancelled) setPrompt(response.prompt)
@@ -59,12 +69,12 @@ export function useInterviewSession({
     return () => {
       cancelled = true
     }
-  }, [questionRevision, replayActive])
+  }, [interviewer, questionRevision, replayActive])
 
   const runAction = useCallback(async (action: InterviewAction) => {
     setBusy(true)
     try {
-      const response = await interviewRouter.respond({
+      const response = await interviewer.respond({
         action,
         answer: action === 'answer' ? answer : undefined,
         context: contextRef.current,
@@ -74,7 +84,16 @@ export function useInterviewSession({
       if (action === 'answer') {
         const copy = applicationCopy[locale]
         const detail = `${copy.focus}: ${response.focus}`
-        addEvent(copy.answerReviewed, detail, 'neutral')
+        addEvent(copy.answerReviewed, detail, 'neutral', {
+          en: {
+            title: applicationCopy.en.answerReviewed,
+            detail: locale === 'en' ? detail : 'Interviewer feedback saved',
+          },
+          ru: {
+            title: applicationCopy.ru.answerReviewed,
+            detail: locale === 'ru' ? detail : 'Обратная связь интервьюера сохранена',
+          },
+        })
         recordAction({
           type: 'answer.submitted',
           source: 'interviewer',
@@ -96,7 +115,7 @@ export function useInterviewSession({
       if (busyTimerRef.current !== null) window.clearTimeout(busyTimerRef.current)
       busyTimerRef.current = window.setTimeout(() => setBusy(false), 180)
     }
-  }, [addEvent, answer, locale, prompt, recordAction])
+  }, [addEvent, answer, interviewer, locale, prompt, recordAction])
 
   const defend = useCallback(() => {
     const text = defenseCopy({
@@ -107,10 +126,22 @@ export function useInterviewSession({
         ? newsFeedMonthlyCost
         : capacityMonthlyCost,
     })
+    const otherLocale = locale === 'ru' ? 'en' : 'ru'
+    const translated = defenseCopy({
+      locale: otherLocale,
+      scenario: contextRef.current.scenario,
+      capacity,
+      monthlyCost: contextRef.current.scenario === 'news-feed'
+        ? newsFeedMonthlyCost
+        : capacityMonthlyCost,
+    })
     setPrompt(text.prompt)
     setFeedback(text.feedback)
     openInterview()
-    addEvent(text.eventTitle, text.eventDetail, 'neutral')
+    addEvent(text.eventTitle, text.eventDetail, 'neutral', {
+      [locale]: { title: text.eventTitle, detail: text.eventDetail },
+      [otherLocale]: { title: translated.eventTitle, detail: translated.eventDetail },
+    } as NonNullable<TimelineEvent['translations']>)
   }, [addEvent, capacity, capacityMonthlyCost, locale, newsFeedMonthlyCost, openInterview])
 
   return {

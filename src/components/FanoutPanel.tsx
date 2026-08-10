@@ -21,6 +21,7 @@ import type {
   Locale,
 } from '../domain/system'
 import { NEWS_FEED_MODEL_LABEL, normalizeNewsFeedTuning } from '../newsFeed/model'
+import { newsFeedAssumptionsCopy } from '../application/copy'
 
 export type FanoutPrediction = NewsFeedBottleneck
 
@@ -126,6 +127,18 @@ export function FanoutPanel({
   onClose,
 }: FanoutPanelProps) {
   const ru = locale === 'ru'
+  const labels: Record<NewsFeedBottleneck, string> = ru ? {
+    'fanout-queue': 'Fan-out очередь',
+    workers: 'Воркеры',
+    'timeline-cache': 'Кеш лент',
+    'post-store': 'Хранилище постов',
+  } : bottleneckLabels
+  const localizedPredictions = ru ? [
+    { value: 'fanout-queue' as const, detail: 'Отставание растёт быстрее, чем очередь разгружается' },
+    { value: 'workers' as const, detail: 'Пропускная способность доставки достигает предела' },
+    { value: 'timeline-cache' as const, detail: 'Лента знаменитости становится горячим ключом' },
+    { value: 'post-store' as const, detail: 'Усиление чтения перегружает хранилище' },
+  ] : predictions
   const values = normalizeNewsFeedTuning(tuning)
   const correctPrediction = prediction === baseline.bottleneck
   const costDelta = report.cost.total - baseline.cost.total
@@ -165,7 +178,7 @@ export function FanoutPanel({
               </div>
             </div>
             <div className="prediction-options" role="radiogroup" aria-label={ru ? 'Прогноз первого узкого места' : 'Predicted first bottleneck'}>
-              {predictions.map((option) => (
+              {localizedPredictions.map((option) => (
                 <button
                   key={option.value}
                   type="button"
@@ -175,7 +188,7 @@ export function FanoutPanel({
                   onClick={() => onPredictionChange(option.value)}
                 >
                   <span>
-                    <strong>{bottleneckLabels[option.value]}</strong>
+                    <strong>{labels[option.value]}</strong>
                     <small>{option.detail}</small>
                   </span>
                   <i>{prediction === option.value ? <Check size={14} /> : null}</i>
@@ -204,12 +217,16 @@ export function FanoutPanel({
             <section className={`prediction-result ${correctPrediction ? 'is-correct' : 'is-missed'}`}>
               <span>{correctPrediction ? <ShieldCheck size={18} /> : <Gauge size={18} />}</span>
               <div>
-                <strong>{correctPrediction ? 'Prediction holds' : 'Model found a different limit'}</strong>
+                <strong>{correctPrediction
+                  ? ru ? 'Прогноз подтвердился' : 'Prediction holds'
+                  : ru ? 'Модель нашла другое ограничение' : 'Model found a different limit'}</strong>
                 <p>
-                  Untuned, the spike saturates the {bottleneckLabels[baseline.bottleneck].toLowerCase()}.
-                  {report.bottleneck !== baseline.bottleneck
-                    ? ` Tuning moves pressure to the ${bottleneckLabels[report.bottleneck].toLowerCase()}.`
-                    : ''}
+                  {ru
+                    ? `Без настройки скачок насыщает: ${labels[baseline.bottleneck].toLowerCase()}.`
+                    : `Untuned, the spike saturates the ${labels[baseline.bottleneck].toLowerCase()}.`}
+                  {report.bottleneck !== baseline.bottleneck ? ru
+                    ? ` Настройка смещает нагрузку на ${labels[report.bottleneck].toLowerCase()}.`
+                    : ` Tuning moves pressure to the ${labels[report.bottleneck].toLowerCase()}.` : ''}
                 </p>
               </div>
             </section>
@@ -217,10 +234,12 @@ export function FanoutPanel({
             <section className="capacity-outcome celebrity-outcome" aria-live="polite">
               <header>
                 <div>
-                  <span className={`capacity-status is-${report.status}`}><i /> {statusLabels[report.status]}</span>
-                  <strong>{currency.format(report.cost.total)}<small>/mo</small></strong>
+                  <span className={`capacity-status is-${report.status}`}><i /> {ru
+                    ? ({ 'within-envelope': 'В пределах', 'at-risk': 'Под риском', saturated: 'Насыщено' } as const)[report.status]
+                    : statusLabels[report.status]}</span>
+                  <strong>{currency.format(report.cost.total)}<small>{ru ? '/мес' : '/mo'}</small></strong>
                 </div>
-                <span className="estimate-label">Estimated</span>
+                <span className="estimate-label">{ru ? 'Оценка' : 'Estimated'}</span>
               </header>
               <div className="defense-metrics">
                 <div className={report.metrics.p99 < baseline.metrics.p99 ? 'defense-metric is-good' : 'defense-metric is-warning'}>
@@ -253,7 +272,7 @@ export function FanoutPanel({
                   <h2>{ru ? 'Настройте fan-out путь' : 'Tune the fan-out path'}</h2>
                   <p>{ru ? 'Каждый выбор сразу меняет скачок и стоимость.' : 'Every choice updates the spike and cost live.'}</p>
                 </div>
-                <button type="button" onClick={onReset} aria-label="Reset fan-out tuning" title="Reset tuning">
+                <button type="button" onClick={onReset} aria-label={ru ? 'Сбросить настройки fan-out' : 'Reset fan-out tuning'} title={ru ? 'Сбросить настройки' : 'Reset tuning'}>
                   <RotateCcw size={16} />
                 </button>
               </div>
@@ -261,9 +280,9 @@ export function FanoutPanel({
                 label={ru ? 'Стратегия fan-out' : 'Fan-out strategy'}
                 value={values.strategy}
                 options={[
-                  { value: 'write', label: 'Write' },
-                  { value: 'read', label: 'Read' },
-                  { value: 'hybrid', label: 'Hybrid' },
+                  { value: 'write', label: ru ? 'При записи' : 'Write' },
+                  { value: 'read', label: ru ? 'При чтении' : 'Read' },
+                  { value: 'hybrid', label: ru ? 'Гибрид' : 'Hybrid' },
                 ]}
                 onChange={(fanoutStrategy) => onTuningChange({ ...tuning, fanoutStrategy })}
               />
@@ -304,7 +323,7 @@ export function FanoutPanel({
                   role="switch"
                   aria-checked={values.deduplication}
                   className={`tuning-switch ${values.deduplication ? 'is-active' : ''}`}
-                  aria-label="Deduplicate timeline delivery"
+                  aria-label={ru ? 'Убирать дубли при доставке в ленту' : 'Deduplicate timeline delivery'}
                   onClick={() => onTuningChange({ ...tuning, deduplication: !values.deduplication })}
                 >
                   <i />
@@ -315,12 +334,12 @@ export function FanoutPanel({
             <details className="capacity-assumptions">
               <summary><span>{ru ? 'Почему такая оценка' : 'Why this estimate'}</span><ChevronDown size={16} /></summary>
               <dl>
-                <div><dt>Fan-out jobs</dt><dd>{compact.format(report.workload.fanoutJobsPerSecond)}/s</dd></div>
-                <div><dt>Worker load</dt><dd>{Math.round(report.utilization.workers * 100)}%</dd></div>
-                <div><dt>Duplicate rate</dt><dd>{report.duplicateRate.toFixed(2)}%</dd></div>
-                <div><dt>Celebrity reach</dt><dd>{compact.format(report.workload.celebrityFollowers)}</dd></div>
+                <div><dt>{ru ? 'Fan-out задач/с' : 'Fan-out jobs'}</dt><dd>{compact.format(report.workload.fanoutJobsPerSecond)}/s</dd></div>
+                <div><dt>{ru ? 'Загрузка воркеров' : 'Worker load'}</dt><dd>{Math.round(report.utilization.workers * 100)}%</dd></div>
+                <div><dt>{ru ? 'Доля дублей' : 'Duplicate rate'}</dt><dd>{report.duplicateRate.toFixed(2)}%</dd></div>
+                <div><dt>{ru ? 'Охват знаменитости' : 'Celebrity reach'}</dt><dd>{compact.format(report.workload.celebrityFollowers)}</dd></div>
               </dl>
-              <ul>{report.assumptions.map((assumption) => <li key={assumption}>{assumption}</li>)}</ul>
+              <ul>{newsFeedAssumptionsCopy(locale, report, tuning).map((assumption) => <li key={assumption}>{assumption}</li>)}</ul>
             </details>
 
             <button className="defend-design" type="button" onClick={onDefend}>

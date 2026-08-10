@@ -1,6 +1,6 @@
 import type { SystemFlowEdge, SystemFlowNode } from '../canvas/types'
 import type { ComponentHealth, FaultMode, Locale, ScenarioId } from '../domain/system'
-import { faultLabels } from '../i18n'
+import { componentLabels, faultLabels } from '../i18n'
 import { normalizeNodeTopology } from '../domain/topology'
 import type { CapacityTuning } from '../domain/system'
 import { computeSimulation, formatMetric } from '../simulation/engine'
@@ -10,6 +10,7 @@ import { compareReplayEvents } from './reducer'
 import type {
   ReplayAttemptV1,
   ReplayEdgeV1,
+  ReplayEventV1,
   ReplayInitialStateV1,
   ReplayNodeV1,
   ReplayPlaybackStateV1,
@@ -175,57 +176,163 @@ export const presentReplayFrame = (
   return { nodes, edges }
 }
 
-const localizeReplayText = (text: string, locale: Locale) => {
-  if (locale === 'en') return text
+const legacyReplayTranslations = [
+  ['Attempt started with Redis unavailable', 'Попытка началась при недоступном Redis'],
+  ['Attempt started with a 50M-follower spike', 'Попытка началась со скачка на 50 млн подписчиков'],
+  ['Architecture replay is ready', 'Повтор архитектуры готов'],
+  ['Design submitted without an injected failure', 'Решение отправлено без включённого сбоя'],
+  ['The submission captured the final architecture state.', 'Зафиксировано итоговое состояние архитектуры.'],
+  ['This failure was already active in the initial state.', 'Сбой уже был активен в исходном состоянии.'],
+  ['Database saturated', 'База данных насыщена'],
+  ['The first critical state appeared at 100k req/s.', 'Первое критическое состояние возникло при 100 тыс. запросов/с.'],
+  ['Topology updated', 'Топология обновлена'],
+  ['Topology recalculated', 'Топология пересчитана'],
+  ['Capacity tuning updated', 'Параметры ёмкости обновлены'],
+  ['Answer reviewed', 'Ответ разобран'],
+  ['Connection added', 'Связь добавлена'],
+  ['Connection removed', 'Связь удалена'],
+  ['Component removed', 'Компонент удалён'],
+] as const
+
+const localizeLegacyReplayText = (text: string, locale: Locale) => {
   const normalized = text.trim()
-  const exact: Record<string, string> = {
-    'Attempt started with Redis unavailable': 'Попытка началась при недоступном Redis',
-    'Attempt started with a 50M-follower spike': 'Попытка началась со скачка на 50 млн подписчиков',
-    'Architecture replay is ready': 'Повтор архитектуры готов',
-    'Design submitted without an injected failure': 'Решение отправлено без включённого сбоя',
-    'The submission captured the final architecture state.': 'Зафиксировано итоговое состояние архитектуры.',
-    'This failure was already active in the initial state.': 'Сбой уже был активен в исходном состоянии.',
-    'Database saturated': 'База данных насыщена',
-    'The first critical state appeared at 100k req/s.': 'Первое критическое состояние возникло при 100 тыс. запросов/с.',
-    'Topology updated': 'Топология обновлена',
-    'Topology recalculated': 'Топология пересчитана',
-    'Capacity tuning updated': 'Параметры ёмкости обновлены',
-    'Answer reviewed': 'Ответ разобран',
-    'Connection added': 'Связь добавлена',
-    'Connection removed': 'Связь удалена',
-    'Component removed': 'Компонент удалён',
-  }
-  if (exact[normalized]) return exact[normalized]
-  if (normalized.startsWith('Attempt started with Redis unavailable')) {
-    return 'Попытка началась при недоступном Redis'
-  }
+  const exact = legacyReplayTranslations.find(([en, ru]) => normalized === en || normalized === ru)
+  if (exact) return locale === 'ru' ? exact[1] : exact[0]
   const cases = normalized.match(/^(\d+) of (\d+) cases passed$/)
-  if (cases) return `Пройдено кейсов: ${cases[1]} из ${cases[2]}`
+  if (cases && locale === 'ru') return `Пройдено кейсов: ${cases[1]} из ${cases[2]}`
+  const russianCases = normalized.match(/^Пройдено кейсов: (\d+) из (\d+)$/)
+  if (russianCases && locale === 'en') return `${russianCases[1]} of ${russianCases[2]} cases passed`
   const offered = normalized.match(/^(\d+)k req\/s offered$/)
-  if (offered) return `Подано ${offered[1]} тыс. запросов/с`
+  if (offered && locale === 'ru') return `Подано ${offered[1]} тыс. запросов/с`
+  const russianOffered = normalized.match(/^Подано (\d+)(?:k| тыс\.) запросов\/с$/)
+  if (russianOffered && locale === 'en') return `${russianOffered[1]}k req/s offered`
   return normalized
-    .replace(/^Design submitted/, 'Решение отправлено')
-    .replace(/^Load changed to/, 'Нагрузка изменена на')
-    .replace(/^Focus:/, 'Фокус:')
+}
+
+const replayEventText = (
+  attempt: ReplayAttemptV1,
+  event: ReplayEventV1,
+  locale: Locale,
+) => {
+  const ru = locale === 'ru'
+  switch (event.type) {
+    case 'load.changed':
+      return {
+        title: ru ? `Целевая нагрузка: ${event.payload.load}×` : `Target load: ${event.payload.load}×`,
+        detail: attempt.challengeId === 'news-feed'
+          ? ru
+            ? `Подано ${event.payload.load * 30} тыс. чтений ленты/с`
+            : `${event.payload.load * 30}k timeline reads/s offered`
+          : ru
+            ? `Подано ${event.payload.load * 10} тыс. запросов/с`
+            : `${event.payload.load * 10}k req/s offered`,
+      }
+    case 'fault.changed':
+      return event.payload.fault === 'none'
+        ? {
+            title: ru ? 'Сбой снят' : 'Fault cleared',
+            detail: ru ? 'Система восстанавливается' : 'System is recovering',
+          }
+        : {
+            title: faultLabels[locale][event.payload.fault],
+            detail: ru ? 'Сбой добавлен в симуляцию' : 'Fault injected into the simulation',
+          }
+    case 'capacity.changed':
+      return {
+        title: ru ? 'Параметры ёмкости обновлены' : 'Capacity tuning updated',
+        detail: ru ? 'Стоимость и пределы системы пересчитаны' : 'Cost and system limits recalculated',
+      }
+    case 'node.added': {
+      const suffix = event.payload.node.data.label.match(/\s+\d+$/)?.[0] ?? ''
+      return {
+        title: ru ? 'Компонент добавлен' : 'Component added',
+        detail: `${componentLabels[locale][event.payload.node.data.kind]}${suffix}`,
+      }
+    }
+    case 'node.updated': {
+      const topology = event.payload.patch.data
+      return topology?.replicas !== undefined || topology?.shards !== undefined
+        ? {
+            title: ru ? 'Топология обновлена' : 'Topology updated',
+            detail: `${event.payload.nodeId}: ${topology.replicas ?? 1}× / ${topology.shards ?? 1}`,
+          }
+        : {
+            title: ru ? 'Расположение схемы обновлено' : 'Architecture layout updated',
+            detail: event.payload.nodeId,
+          }
+    }
+    case 'node.removed':
+      return {
+        title: ru ? 'Компонент удалён' : 'Component removed',
+        detail: ru ? 'Топология пересчитана' : 'Topology recalculated',
+      }
+    case 'edge.added':
+      return {
+        title: ru ? 'Связь добавлена' : 'Connection added',
+        detail: ru ? 'Топология пересчитана' : 'Topology recalculated',
+      }
+    case 'edge.updated':
+      return {
+        title: ru ? 'Связь обновлена' : 'Connection updated',
+        detail: ru ? 'Топология пересчитана' : 'Topology recalculated',
+      }
+    case 'edge.removed':
+      return {
+        title: ru ? 'Связь удалена' : 'Connection removed',
+        detail: ru ? 'Топология пересчитана' : 'Topology recalculated',
+      }
+    case 'architecture.replaced':
+      return {
+        title: ru ? 'Архитектура заменена' : 'Architecture replaced',
+        detail: ru ? 'Состояние схемы восстановлено' : 'Diagram state restored',
+      }
+    case 'answer.submitted':
+      return {
+        title: event.payload.focus?.startsWith('prediction:')
+          ? ru ? 'Прогноз проверен' : 'Prediction reviewed'
+          : ru ? 'Ответ разобран' : 'Answer reviewed',
+        detail: ru ? 'Обратная связь интервьюера сохранена' : 'Interviewer feedback saved',
+      }
+    case 'design.submitted':
+      return {
+        title: `${ru ? 'Решение отправлено' : 'Design submitted'} · ${event.payload.submission.score}/100`,
+        detail: ru
+          ? `Пройдено кейсов: ${event.payload.submission.passedCases} из ${event.payload.submission.totalCases}`
+          : `${event.payload.submission.passedCases} of ${event.payload.submission.totalCases} cases passed`,
+      }
+  }
 }
 
 export const replayTimelineEvents = (
   attempt: ReplayAttemptV1,
   locale: Locale = 'en',
 ): ReplayTimelineItem[] =>
-  [...attempt.events].sort(compareReplayEvents).flatMap((event) => event.timeline
-    ? [{
+  [...attempt.events].sort(compareReplayEvents).flatMap((event) => {
+    if (!event.timeline) return []
+    const text = replayEventText(attempt, event, locale)
+    return [{
         id: event.id,
         atMs: event.atMs,
-        title: localizeReplayText(event.timeline.title, locale),
-        detail: localizeReplayText(event.timeline.detail, locale),
+        title: text.title,
+        detail: text.detail,
         tone: event.timeline.tone,
       }]
-    : [])
+  })
 
 export const replayKeyMoment = (attempt: ReplayAttemptV1, locale: Locale = 'en') =>
   (attempt.summary?.keyMoment?.title
-    ? localizeReplayText(attempt.summary.keyMoment.title, locale)
+    ? (() => {
+        const localized = localizeLegacyReplayText(attempt.summary!.keyMoment!.title, locale)
+        const needsSemanticFallback = locale === 'en'
+          ? /[А-Яа-яЁё]/.test(localized)
+          : !/[А-Яа-яЁё]/.test(localized)
+        const event = attempt.summary!.keyMoment!.eventId
+          ? attempt.events.find(({ id }) => id === attempt.summary!.keyMoment!.eventId)
+          : undefined
+        return needsSemanticFallback && event
+          ? replayEventText(attempt, event, locale).title
+          : localized
+      })()
     : undefined) ??
   replayTimelineEvents(attempt, locale).find((event) => event.tone === 'critical')?.title ??
   (attempt.initial.fault === 'cache-outage'

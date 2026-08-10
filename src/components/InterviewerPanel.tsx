@@ -111,7 +111,10 @@ export function InterviewerPanel({
               <li key={event.id} className={`tone-${event.tone}`}>
                 <i aria-hidden="true" />
                 <time>{event.timestamp}</time>
-                <span><strong>{event.title}</strong><small>{event.detail}</small></span>
+                <span>
+                  <strong>{event.translations?.[locale].title ?? event.title}</strong>
+                  <small>{event.translations?.[locale].detail ?? event.detail}</small>
+                </span>
               </li>
             ))}
           </ol>
