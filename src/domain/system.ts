@@ -26,6 +26,8 @@ export type FaultMode =
   | 'duplicate-delivery'
 
 export type ScenarioId = 'url-shortener' | 'news-feed'
+export type Locale = 'en' | 'ru'
+export type LoadMultiplier = 1 | 3 | 10
 
 export interface SystemNodeData extends Record<string, unknown> {
   kind: ComponentKind
@@ -33,6 +35,10 @@ export interface SystemNodeData extends Record<string, unknown> {
   health: ComponentHealth
   detail: string
   load: number
+  /** Logical instances rendered as a compact stack on the canvas. */
+  replicas?: number
+  /** Data partitions owned by this logical component. */
+  shards?: number
 }
 
 export interface SimulationMetrics {
@@ -155,6 +161,7 @@ export interface CapacityReport {
     createRps: number
     effectiveCacheHitRate: number
     databaseReadRps: number
+    databaseShards: number
     retainedRows: number
     rawStorageGiB: number
   }
@@ -173,12 +180,15 @@ export interface CapacityReport {
 
 export interface SimulationInput {
   scenario?: ScenarioId
-  loadMultiplier: 1 | 3 | 10
+  /** May sit between presets while the live traffic ramp is in progress. */
+  loadMultiplier: number
   fault: FaultMode
   tick: number
   nodeCount?: number
   edgeCount?: number
   componentCounts?: Partial<Record<ComponentKind, number>>
+  /** Serving replicas, kept separate from shard-driven capacity. */
+  replicaCounts?: Partial<Record<ComponentKind, number>>
   criticalPathConnected?: boolean
   capacity?: CapacityTuning
 }
@@ -192,6 +202,7 @@ export interface TimelineEvent {
   timestamp: string
   title: string
   detail: string
+  translations?: Record<Locale, { title: string; detail: string }>
   tone: 'neutral' | 'healthy' | 'warning' | 'critical'
 }
 

@@ -13,6 +13,7 @@ import type {
  */
 export interface TopologySummary {
   componentCounts: Partial<Record<ComponentKind, number>>
+  replicaCounts?: Partial<Record<ComponentKind, number>>
   criticalPathConnected: boolean
   nodeCount: number
   edgeCount: number

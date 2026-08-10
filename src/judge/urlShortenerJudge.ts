@@ -48,7 +48,7 @@ const caseRules: Record<string, readonly AssertionDefinition[]> = {
   ],
   'cache-outage': [
     connectedPath(),
-    componentAtLeast('cache', 'Provides a surviving cache replica', 2),
+    replicaAtLeast('cache', 'Provides a surviving cache replica', 2),
     metricAtMost('p99', 'Keeps outage p99 at or below 750 ms', 750),
     metricAtMost('errorRate', 'Keeps outage errors at or below 10%', 10),
     metricAtMost('dbCpu', 'Keeps database CPU at or below 90%', 90),
@@ -65,7 +65,7 @@ const caseRules: Record<string, readonly AssertionDefinition[]> = {
   'hidden-feedback-loop': [
     connectedPath(),
     componentAtLeast('service', 'Has redundant service capacity', 2),
-    componentAtLeast('database', 'Has database read or failover capacity', 2),
+    replicaAtLeast('database', 'Has database read or failover capacity', 2),
     componentAtLeast('queue', 'Has an asynchronous pressure boundary', 1),
     metricAtMost('p99', 'Bounds feedback-loop latency', 400),
     metricAtMost('errorRate', 'Bounds feedback-loop errors', 8),
@@ -91,6 +91,20 @@ function componentAtLeast(
     label,
     evaluate: ({ topology }) =>
       normalizedCount(topology.componentCounts[kind]) >= minimum,
+  }
+}
+
+function replicaAtLeast(
+  kind: ComponentKind,
+  label: string,
+  minimum: number,
+): AssertionDefinition {
+  return {
+    id: `replica-${kind}-${minimum}`,
+    label,
+    evaluate: ({ topology }) => normalizedCount(
+      topology.replicaCounts?.[kind] ?? topology.componentCounts[kind],
+    ) >= minimum,
   }
 }
 
@@ -146,6 +160,13 @@ function validateTopology(topology: TopologySummary) {
       )
     }
   }
+  for (const [kind, count] of Object.entries(topology.replicaCounts ?? {})) {
+    if (count !== undefined && (!Number.isFinite(count) || count < 0)) {
+      throw new TypeError(
+        `Topology replica count for ${kind} must be a non-negative finite number`,
+      )
+    }
+  }
 }
 
 function validateChallengeSuite() {
@@ -179,6 +200,7 @@ function evaluateCases(
       nodeCount: topology.nodeCount,
       edgeCount: topology.edgeCount,
       componentCounts: { ...topology.componentCounts },
+      replicaCounts: topology.replicaCounts ? { ...topology.replicaCounts } : undefined,
       criticalPathConnected: topology.criticalPathConnected,
     })
     const context = { topology, snapshot }

@@ -33,7 +33,7 @@ const withMotion = (
   }
 }
 
-const baseMetrics = (load: 1 | 3 | 10): SimulationMetrics => ({
+const baseMetrics = (load: number): SimulationMetrics => ({
   throughput: 10_000 * load,
   p99: round(24 + 4.8 * load + 0.48 * load ** 2),
   errorRate: round(0.15 + 0.035 * load, 1),
@@ -125,7 +125,10 @@ function computeUrlShortenerSimulation(input: SimulationInput): SimulationSnapsh
 
   if (input.componentCounts) {
     const serviceReplicas = Math.max(1, input.componentCounts.service ?? 0)
-    const cacheReplicas = Math.max(1, input.componentCounts.cache ?? 0)
+    const cacheReplicas = Math.max(
+      1,
+      input.replicaCounts?.cache ?? input.componentCounts.cache ?? 0,
+    )
     const databaseReplicas = Math.max(1, input.componentCounts.database ?? 0)
     const serviceRelief = 1 + (serviceReplicas - 1) * 0.38
     const databaseRelief = 1 + (databaseReplicas - 1) * 0.3
@@ -150,6 +153,7 @@ function computeUrlShortenerSimulation(input: SimulationInput): SimulationSnapsh
     fault,
     tuning: input.capacity ?? DEFAULT_CAPACITY_TUNING,
     componentCounts: input.componentCounts,
+    replicaCounts: input.replicaCounts,
     criticalPathConnected: true,
   })
 
@@ -162,7 +166,10 @@ function computeUrlShortenerSimulation(input: SimulationInput): SimulationSnapsh
         : 'healthy'
     nodeHealth.queue = metrics.queueDepth >= 2_000 ? 'backlog' : 'healthy'
     if (fault === 'cache-outage') {
-      const cacheReplicas = Math.max(1, input.componentCounts?.cache ?? 1)
+      const cacheReplicas = Math.max(
+        1,
+        input.replicaCounts?.cache ?? input.componentCounts?.cache ?? 1,
+      )
       nodeHealth.cache = cacheReplicas > 1 ? 'degraded' : 'failed'
     } else {
       nodeHealth.cache = capacity.utilization.cache >= 1 ? 'hot' : 'healthy'

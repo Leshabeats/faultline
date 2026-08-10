@@ -8,4 +8,14 @@ export default defineConfig({
     host: '127.0.0.1',
     port: 4173,
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          flow: ['@xyflow/react'],
+          icons: ['lucide-react'],
+        },
+      },
+    },
+  },
 })

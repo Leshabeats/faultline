@@ -2,7 +2,6 @@ import { urlShortenerChallenge } from '../challenges/urlShortener'
 import { judgeNewsFeed, judgeUrlShortener } from '../judge'
 import { computeSimulation } from '../simulation/engine'
 import { analyzeTopology } from '../simulation/topology'
-import { presentReplayFrame } from './presentation'
 import { playReplayAt } from './reducer'
 import type { ReplayAttemptV1 } from './types'
 
@@ -21,15 +20,18 @@ export function verifyImportedAttempt(
 
   const finalFrame = playReplayAt(attempt, attempt.durationMs)
   const scenario = attempt.challengeId === 'news-feed' ? 'news-feed' : 'url-shortener'
-  const presented = presentReplayFrame(finalFrame, Math.floor(attempt.durationMs / 900), true, scenario)
-  const topology = analyzeTopology(presented.nodes, presented.edges)
+  const topology = analyzeTopology(
+    finalFrame.architecture.nodes,
+    finalFrame.architecture.edges,
+  )
   const judge = scenario === 'news-feed' ? judgeNewsFeed : judgeUrlShortener
   const report = judge(
     {
       componentCounts: topology.componentCounts,
+      replicaCounts: topology.replicaCounts,
       criticalPathConnected: topology.criticalPathConnected,
-      nodeCount: presented.nodes.length,
-      edgeCount: presented.edges.length,
+      nodeCount: finalFrame.architecture.nodes.length,
+      edgeCount: finalFrame.architecture.edges.length,
     },
     {
       simulate: (input) => computeSimulation({

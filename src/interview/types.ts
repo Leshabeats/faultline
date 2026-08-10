@@ -1,5 +1,6 @@
 import type {
   FaultMode,
+  Locale,
   SimulationMetrics,
   ScenarioId,
   TimelineEvent,
@@ -8,6 +9,7 @@ import type {
 export type InterviewAction = 'continue' | 'hint' | 'review' | 'answer'
 
 export interface InterviewContext {
+  locale: Locale
   scenario: ScenarioId
   loadMultiplier: 1 | 3 | 10
   fault: FaultMode
@@ -29,8 +31,11 @@ export interface InterviewResponse {
   focus: string
 }
 
-export interface InterviewProvider {
+export interface InterviewResponder {
+  respond(request: InterviewRequest, providerId?: string): Promise<InterviewResponse>
+}
+
+export interface InterviewProvider extends InterviewResponder {
   id: string
   label: string
-  respond(request: InterviewRequest): Promise<InterviewResponse>
 }

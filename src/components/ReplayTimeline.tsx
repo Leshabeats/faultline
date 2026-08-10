@@ -1,4 +1,5 @@
 import { ChevronLeft, ChevronRight, Pause, Play } from 'lucide-react'
+import type { Locale } from '../domain/system'
 
 export interface ReplayTimelineEvent {
   id: string
@@ -9,6 +10,7 @@ export interface ReplayTimelineEvent {
 }
 
 interface ReplayTimelineProps {
+  locale: Locale
   cursorMs: number
   durationMs: number
   playing: boolean
@@ -42,6 +44,7 @@ const formatDuration = (valueMs: number) => {
 }
 
 export function ReplayTimeline({
+  locale,
   cursorMs,
   durationMs,
   playing,
@@ -61,16 +64,17 @@ export function ReplayTimeline({
   onNextEvent,
   onSpeedChange,
 }: ReplayTimelineProps) {
+  const ru = locale === 'ru'
   const safeDuration = Math.max(durationMs, 1)
 
   return (
-    <section className="replay-timeline" aria-label="Attempt replay timeline">
+    <section className="replay-timeline" aria-label={ru ? 'Хронология повтора попытки' : 'Attempt replay timeline'}>
       <div className="replay-timeline-summary">
         <div className="replay-active-event" aria-live="polite">
           <i className={`tone-${activeEvent?.tone ?? 'neutral'}`} aria-hidden="true" />
           <span>
-            <strong>{activeEvent?.title ?? 'Attempt started'}</strong>
-            <small>{activeEvent?.detail ?? 'System at initial state'}</small>
+            <strong>{activeEvent?.title ?? (ru ? 'Попытка началась' : 'Attempt started')}</strong>
+            <small>{activeEvent?.detail ?? (ru ? 'Система в исходном состоянии' : 'System at initial state')}</small>
           </span>
         </div>
         <dl className="replay-metrics">
@@ -83,18 +87,20 @@ export function ReplayTimeline({
 
       <div className="replay-transport">
         <div className="replay-step-controls">
-          <button type="button" onClick={onPreviousEvent} aria-label="Previous replay event">
+          <button type="button" onClick={onPreviousEvent} aria-label={ru ? 'Предыдущее событие повтора' : 'Previous replay event'}>
             <ChevronLeft size={18} />
           </button>
           <button
             className="replay-play-button"
             type="button"
             onClick={onTogglePlaying}
-            aria-label={playing ? 'Pause replay' : 'Play replay'}
+            aria-label={playing
+              ? ru ? 'Приостановить повтор' : 'Pause replay'
+              : ru ? 'Запустить повтор' : 'Play replay'}
           >
             {playing ? <Pause size={17} fill="currentColor" /> : <Play size={17} fill="currentColor" />}
           </button>
-          <button type="button" onClick={onNextEvent} aria-label="Next replay event">
+          <button type="button" onClick={onNextEvent} aria-label={ru ? 'Следующее событие повтора' : 'Next replay event'}>
             <ChevronRight size={18} />
           </button>
         </div>
@@ -116,7 +122,7 @@ export function ReplayTimeline({
             step={100}
             value={Math.min(cursorMs, safeDuration)}
             onChange={(event) => onCursorChange(Number(event.target.value))}
-            aria-label="Replay position"
+            aria-label={ru ? 'Позиция повтора' : 'Replay position'}
             style={{ '--replay-progress': `${(Math.min(cursorMs, safeDuration) / safeDuration) * 100}%` } as React.CSSProperties}
           />
         </div>
@@ -125,7 +131,7 @@ export function ReplayTimeline({
           {formatDuration(cursorMs)} <span>/ {formatDuration(durationMs)}</span>
         </time>
         <label className="replay-speed">
-          <span className="screen-reader-status">Replay speed</span>
+          <span className="screen-reader-status">{ru ? 'Скорость повтора' : 'Replay speed'}</span>
           <select value={speed} onChange={(event) => onSpeedChange(Number(event.target.value))}>
             <option value={0.5}>0.5×</option>
             <option value={1}>1×</option>

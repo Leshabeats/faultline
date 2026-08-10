@@ -107,6 +107,25 @@ describe('judgeUrlShortener', () => {
     expect(report.score).toBeLessThan(100)
   })
 
+  it('does not count cache shards as independent surviving replicas', () => {
+    const report = judgeUrlShortener({
+      ...resilientTopology,
+      componentCounts: { ...resilientTopology.componentCounts, cache: 2 },
+      replicaCounts: { cache: 1, database: 2 },
+    })
+    const cacheOutage = report.cases.find(
+      (item) => item.visibility === 'public' && item.caseId === 'cache-outage',
+    )
+
+    expect(cacheOutage?.visibility).toBe('public')
+    if (!cacheOutage || cacheOutage.visibility !== 'public') return
+    expect(cacheOutage.assertions).toContainEqual({
+      id: 'replica-cache-2',
+      label: 'Provides a surviving cache replica',
+      passed: false,
+    })
+  })
+
   it('passes topology data into all five simulations at a fixed tick', () => {
     const inputs: SimulationInput[] = []
     const simulate = (input: SimulationInput) => {
@@ -155,5 +174,11 @@ describe('judgeUrlShortener', () => {
         componentCounts: { ...starterTopology.componentCounts, cache: -1 },
       }),
     ).toThrow(/component count/)
+    expect(() =>
+      judgeUrlShortener({
+        ...starterTopology,
+        replicaCounts: { cache: Number.NaN },
+      }),
+    ).toThrow(/replica count/)
   })
 })

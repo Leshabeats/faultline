@@ -7,6 +7,7 @@ const request: InterviewRequest = {
   answer: 'Use request coalescing and serve stale data with bounded concurrency.',
   context: {
     scenario: 'url-shortener',
+    locale: 'en',
     loadMultiplier: 10,
     fault: 'cache-outage',
     metrics: {
@@ -31,6 +32,18 @@ describe('InterviewRouter', () => {
     await expect(router.respond(request, 'future-provider')).resolves.toEqual(
       explicitLocal,
     )
+  })
+
+  it('keeps the complete local interview response in Russian', async () => {
+    const response = await new InterviewRouter().respond({
+      ...request,
+      answer: 'Использую объединение запросов и ограничение параллелизма, принимая компромисс по задержке.',
+      context: { ...request.context, locale: 'ru' },
+    })
+
+    expect(response.prompt).toContain('Redis недоступен')
+    expect(response.message).toContain('вы назвали механизм и его компромисс')
+    expect(response.focus).toBe('компромисс')
   })
 
   it('can register a future OpenAI-like provider and forwards the request unchanged', async () => {

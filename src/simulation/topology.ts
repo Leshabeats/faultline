@@ -1,5 +1,9 @@
-import type { SystemFlowEdge, SystemFlowNode } from '../canvas/types'
-import type { ComponentKind } from '../domain/system'
+import {
+  normalizeNodeTopology,
+  type TopologyAnalysis,
+  type TopologyEdge,
+  type TopologyNode,
+} from '../domain/topology'
 
 function walkGraph(starts: string[], adjacency: Map<string, string[]>) {
   const queue = [...starts]
@@ -16,15 +20,12 @@ function walkGraph(starts: string[], adjacency: Map<string, string[]>) {
   return visited
 }
 
-export interface TopologyAnalysis {
-  componentCounts: Partial<Record<ComponentKind, number>>
-  criticalPathConnected: boolean
-  routedNodeIds: string[]
-}
-
-export function analyzeTopology(
-  nodes: SystemFlowNode[],
-  edges: SystemFlowEdge[],
+export function analyzeTopology<
+  Node extends TopologyNode,
+  Edge extends TopologyEdge,
+>(
+  nodes: readonly Node[],
+  edges: readonly Edge[],
 ): TopologyAnalysis {
   const clients = nodes.filter((node) => node.data.kind === 'client').map((node) => node.id)
   const databases = nodes
@@ -44,10 +45,21 @@ export function analyzeTopology(
     .filter((nodeId) => canReachDatabase.has(nodeId))
     .sort()
   const routedNodeIdSet = new Set(routedNodeIds)
-  const componentCounts = nodes.reduce<Partial<Record<ComponentKind, number>>>(
+  const replicaCounts: TopologyAnalysis['replicaCounts'] = {}
+  const componentCounts = nodes.reduce<TopologyAnalysis['componentCounts']>(
     (counts, node) => {
       if (routedNodeIdSet.has(node.id)) {
-        counts[node.data.kind] = (counts[node.data.kind] ?? 0) + 1
+        const { replicas, shards } = normalizeNodeTopology(node.data.kind, node.data)
+        replicaCounts[node.data.kind] = (replicaCounts[node.data.kind] ?? 0) + replicas
+        // Database replicas are modelled separately as read replicas in the
+        // capacity tuning. Database nodes contribute their shard count here;
+        // stateless/cache nodes contribute every serving instance.
+        const instances = node.data.kind === 'database'
+          ? shards
+          : node.data.kind === 'cache'
+            ? replicas * shards
+            : replicas
+        counts[node.data.kind] = (counts[node.data.kind] ?? 0) + instances
       }
       return counts
     },
@@ -56,6 +68,7 @@ export function analyzeTopology(
 
   return {
     componentCounts,
+    replicaCounts,
     criticalPathConnected: databases.some((databaseId) =>
       reachableFromClients.has(databaseId),
     ),

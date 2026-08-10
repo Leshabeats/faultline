@@ -1,4 +1,8 @@
 import type { CapacityTuning, ComponentKind, FaultMode } from '../domain/system'
+import {
+  alignDatabaseReplication,
+  databaseReplicationMatches,
+} from '../domain/topology'
 import { cloneInitialReplayState } from './reducer'
 import {
   REPLAY_SCHEMA,
@@ -144,18 +148,33 @@ const isPosition = (value: unknown) =>
 
 const isNodeData = (value: unknown): value is ReplayNodeV1['data'] =>
   isRecord(value) &&
-  hasOnlyKeys(value, ['kind', 'label']) &&
+  hasOnlyKeys(value, ['kind', 'label', 'replicas', 'shards']) &&
   componentKinds.includes(value.kind as ComponentKind) &&
-  isBoundedString(value.label)
+  isBoundedString(value.label) &&
+  (value.replicas === undefined || (isNonNegativeInteger(value.replicas) && value.replicas >= 1 && value.replicas <= 16)) &&
+  (value.shards === undefined || (isNonNegativeInteger(value.shards) && value.shards >= 1 && value.shards <= 64))
 
 const isPartialNodeData = (value: unknown) => {
   if (!isRecord(value)) return false
   return (
-    hasOnlyKeys(value, ['kind', 'label']) &&
+    hasOnlyKeys(value, ['kind', 'label', 'replicas', 'shards']) &&
     (value.kind === undefined || componentKinds.includes(value.kind as ComponentKind)) &&
-    (value.label === undefined || isBoundedString(value.label))
+    (value.label === undefined || isBoundedString(value.label)) &&
+    (value.replicas === undefined || (isNonNegativeInteger(value.replicas) && value.replicas >= 1 && value.replicas <= 16)) &&
+    (value.shards === undefined || (isNonNegativeInteger(value.shards) && value.shards >= 1 && value.shards <= 64))
   )
 }
+
+const isTopologyPatch = (value: unknown) =>
+  isRecord(value) &&
+  hasOnlyKeys(value, ['nodeId', 'replicas', 'shards']) &&
+  isBoundedString(value.nodeId) &&
+  isNonNegativeInteger(value.replicas) &&
+  value.replicas >= 1 &&
+  value.replicas <= 16 &&
+  isNonNegativeInteger(value.shards) &&
+  value.shards >= 1 &&
+  value.shards <= 64
 
 const isNode = (value: unknown): value is ReplayNodeV1 =>
   isRecord(value) &&
@@ -286,8 +305,14 @@ const isEvent = (value: unknown): value is ReplayEventV1 => {
       )
     case 'capacity.changed':
       return (
-        hasOnlyKeys(payload, ['capacity']) &&
-        isCapacityTuning(payload.capacity)
+        hasOnlyKeys(payload, ['capacity', 'topology']) &&
+        isCapacityTuning(payload.capacity) &&
+        (payload.topology === undefined || (
+          Array.isArray(payload.topology) &&
+          payload.topology.length <= REPLAY_IMPORT_LIMITS.maxNodes &&
+          payload.topology.every(isTopologyPatch) &&
+          new Set(payload.topology.map((patch) => patch.nodeId)).size === payload.topology.length
+        ))
       )
     case 'node.added':
       return hasOnlyKeys(payload, ['node']) && isNode(payload.node)
@@ -385,6 +410,12 @@ export function validateReplayAttempt(value: unknown): value is ReplayAttemptV1 
     return false
   }
 
+  const initial = value.initial as unknown as ReplayAttemptV1['initial']
+  if (!databaseReplicationMatches(
+    initial.architecture.nodes,
+    initial.capacity?.readReplicas ?? 0,
+  )) return false
+
   const events = value.events as ReplayEventV1[]
   return (
     new Set(events.map((event) => event.id)).size === events.length &&
@@ -413,6 +444,8 @@ interface LegacyScenarioNode {
   kind: ComponentKind
   label: string
   position: { x: number; y: number }
+  replicas?: number
+  shards?: number
 }
 
 interface LegacyScenarioEdge {
@@ -435,7 +468,13 @@ const isLegacyScenarioNode = (value: unknown): value is LegacyScenarioNode =>
   isBoundedString(value.id) &&
   componentKinds.includes(value.kind as ComponentKind) &&
   isBoundedString(value.label) &&
-  isPosition(value.position)
+  isPosition(value.position) &&
+  (value.replicas === undefined || (
+    isNonNegativeInteger(value.replicas) && value.replicas >= 1 && value.replicas <= 16
+  )) &&
+  (value.shards === undefined || (
+    isNonNegativeInteger(value.shards) && value.shards >= 1 && value.shards <= 64
+  ))
 
 const isLegacyScenarioEdge = (value: unknown): value is LegacyScenarioEdge =>
   isRecord(value) &&
@@ -470,16 +509,22 @@ const migrateLegacyScenario = (
   source: string,
 ): ReplayEnvelopeV1 => {
   const timestamp = '1970-01-01T00:00:00.000Z'
-  const architecture: ReplayArchitectureV1 = {
-    nodes: scenario.nodes.map((node) => ({
+  const nodes = scenario.nodes.map((node) => ({
       id: node.id,
       type: 'system',
       position: { ...node.position },
       data: {
         kind: node.kind,
         label: node.label,
+        ...(node.replicas !== undefined ? { replicas: node.replicas } : {}),
+        ...(node.shards !== undefined ? { shards: node.shards } : {}),
       },
-    })),
+    })) satisfies ReplayNodeV1[]
+  const architecture: ReplayArchitectureV1 = {
+    nodes: alignDatabaseReplication(
+      nodes,
+      scenario.capacity?.readReplicas ?? 0,
+    ),
     edges: scenario.edges.map((edge, index) => ({
       id: `imported-edge-${index}-${edge.source}-${edge.target}`,
       type: 'traffic',

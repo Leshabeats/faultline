@@ -57,5 +57,74 @@ describe('replay presentation', () => {
     attempt.events = []
 
     expect(replayKeyMoment(attempt)).toBe('Attempt started with Redis unavailable')
+    expect(replayKeyMoment(attempt, 'ru')).toBe('Попытка началась при недоступном Redis')
+  })
+
+  it('localizes metadata from previously saved English replays at presentation time', () => {
+    const attempt = createTestAttempt()
+    attempt.summary = {
+      score: 76,
+      maxScore: 100,
+      passed: false,
+      keyMoment: {
+        title: 'Attempt started with Redis unavailable',
+        detail: 'This failure was already active in the initial state.',
+        tone: 'critical',
+        atMs: 0,
+      },
+    }
+
+    expect(replayKeyMoment(attempt, 'ru')).toBe('Попытка началась при недоступном Redis')
+  })
+
+  it('renders a Russian-recorded event in English from its semantic payload', () => {
+    const attempt = createTestAttempt()
+    attempt.events = [{
+      id: 'ru-load',
+      atMs: 0,
+      sequence: 0,
+      source: 'user',
+      type: 'load.changed',
+      payload: { load: 3 },
+      timeline: {
+        title: 'Целевая нагрузка: 3×',
+        detail: 'Подано 30k запросов/с',
+        tone: 'healthy',
+      },
+    }]
+
+    expect(replayTimelineEvents(attempt, 'en')[0]).toMatchObject({
+      title: 'Target load: 3×',
+      detail: '30k req/s offered',
+    })
+  })
+
+  it('localizes the generated label of an added component', () => {
+    const attempt = createTestAttempt()
+    attempt.events = [{
+      id: 'ru-node',
+      atMs: 0,
+      sequence: 0,
+      source: 'user',
+      type: 'node.added',
+      payload: {
+        node: {
+          id: 'service-2',
+          type: 'system',
+          position: { x: 20, y: 40 },
+          data: { kind: 'service', label: 'Сервис 2' },
+        },
+      },
+      timeline: {
+        title: 'Сервис 2: компонент добавлен',
+        detail: 'Подключите компонент, чтобы изменить модель',
+        tone: 'healthy',
+      },
+    }]
+
+    expect(replayTimelineEvents(attempt, 'en')[0]).toMatchObject({
+      title: 'Component added',
+      detail: 'Service 2',
+    })
   })
 })

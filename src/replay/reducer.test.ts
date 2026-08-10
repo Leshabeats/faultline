@@ -19,6 +19,59 @@ describe('replay reduction', () => {
     ).toThrow(/0ms/)
   })
 
+  it('replays database capacity and canvas topology as one atomic event', () => {
+    const attempt = recordReplayEvent(
+      createTestAttempt(),
+      event({
+        id: 'database-topology',
+        atMs: 0,
+        source: 'user',
+        type: 'capacity.changed',
+        payload: {
+          capacity: {
+            cacheHitRate: 0.95,
+            indexedLookup: true,
+            poolSize: 300,
+            readReplicas: 2,
+            databaseProfile: 'balanced',
+          },
+          topology: [{ nodeId: 'database', replicas: 3, shards: 4 }],
+        },
+      }),
+    )
+
+    const replay = playReplayAt(attempt, 0)
+    expect(replay.capacity?.readReplicas).toBe(2)
+    expect(replay.architecture.nodes.find(({ id }) => id === 'database')?.data)
+      .toMatchObject({ replicas: 3, shards: 4 })
+  })
+
+  it('repairs legacy capacity events that omitted their database topology patch', () => {
+    const attempt = recordReplayEvent(
+      createTestAttempt(),
+      event({
+        id: 'legacy-capacity',
+        atMs: 0,
+        source: 'user',
+        type: 'capacity.changed',
+        payload: {
+          capacity: {
+            cacheHitRate: 0.95,
+            indexedLookup: true,
+            poolSize: 300,
+            readReplicas: 2,
+            databaseProfile: 'balanced',
+          },
+        },
+      }),
+    )
+
+    const replay = playReplayAt(attempt, 0)
+    expect(replay.capacity?.readReplicas).toBe(2)
+    expect(replay.architecture.nodes.find(({ id }) => id === 'database')?.data.replicas)
+      .toBe(3)
+  })
+
   it('replays load, fault, graph edits, answers, and submissions at arbitrary times', () => {
     let attempt = createTestAttempt()
     attempt = recordReplayEvent(

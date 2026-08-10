@@ -1,5 +1,6 @@
 import { Download, FileUp, History, Play, Trash2, X } from 'lucide-react'
 import { useEffect, useRef, type ChangeEvent } from 'react'
+import type { Locale } from '../domain/system'
 
 export interface HistoryAttemptItem {
   id: string
@@ -13,6 +14,7 @@ export interface HistoryAttemptItem {
 
 interface HistoryPanelProps {
   open: boolean
+  locale: Locale
   attempts: HistoryAttemptItem[]
   notice?: { message: string; tone: 'success' | 'error' } | null
   onClose: () => void
@@ -29,10 +31,10 @@ const formatDuration = (valueMs: number) => {
   return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
 }
 
-const formatDate = (value: string) => {
+const formatDate = (value: string, locale: Locale) => {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat(locale === 'ru' ? 'ru-RU' : 'en-US', {
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
@@ -42,6 +44,7 @@ const formatDate = (value: string) => {
 
 export function HistoryPanel({
   open,
+  locale,
   attempts,
   notice,
   onClose,
@@ -50,6 +53,7 @@ export function HistoryPanel({
   onExport,
   onImport,
 }: HistoryPanelProps) {
+  const ru = locale === 'ru'
   const fileInputRef = useRef<HTMLInputElement>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
   const panelRef = useRef<HTMLElement>(null)
@@ -104,13 +108,13 @@ export function HistoryPanel({
   }
 
   return (
-    <aside ref={panelRef} className="history-panel" role="dialog" aria-modal="true" aria-label="Saved attempts">
+    <aside ref={panelRef} className="history-panel" role="dialog" aria-modal="true" aria-label={ru ? 'Сохранённые попытки' : 'Saved attempts'}>
       <header className="history-panel-header">
         <div>
-          <strong>History</strong>
-          <span>Saved on this device</span>
+          <strong>{ru ? 'История' : 'History'}</strong>
+          <span>{ru ? 'Сохранено на этом устройстве' : 'Saved on this device'}</span>
         </div>
-        <button ref={closeButtonRef} type="button" onClick={onClose} aria-label="Close history"><X size={19} /></button>
+        <button ref={closeButtonRef} type="button" onClick={onClose} aria-label={ru ? 'Закрыть историю' : 'Close history'}><X size={19} /></button>
       </header>
 
       <div className="history-panel-body">
@@ -125,8 +129,8 @@ export function HistoryPanel({
         {attempts.length === 0 ? (
           <div className="history-empty">
             <span aria-hidden="true"><History size={22} /></span>
-            <strong>No saved attempts yet.</strong>
-            <p>Submit a design to keep its full failure replay here.</p>
+            <strong>{ru ? 'Сохранённых попыток пока нет.' : 'No saved attempts yet.'}</strong>
+            <p>{ru ? 'Отправьте решение, чтобы сохранить здесь полное воспроизведение сбоев.' : 'Submit a design to keep its full failure replay here.'}</p>
           </div>
         ) : (
           <ol className="history-list">
@@ -135,7 +139,7 @@ export function HistoryPanel({
                 <div className="history-attempt-heading">
                   <span>
                     <strong>{attempt.title}</strong>
-                    <small>{formatDate(attempt.completedAt)}</small>
+                    <small>{formatDate(attempt.completedAt, locale)}</small>
                   </span>
                   {attempt.score === undefined
                     ? <strong className="is-snapshot">—</strong>
@@ -143,11 +147,15 @@ export function HistoryPanel({
                 </div>
                 <p>{attempt.keyMoment}</p>
                 <div className="history-attempt-meta">
-                  <span>{attempt.score === undefined ? 'Snapshot' : attempt.passed ? 'Passed' : 'Needs work'} · {formatDuration(attempt.durationMs)}</span>
+                  <span>{attempt.score === undefined
+                    ? ru ? 'Снимок' : 'Snapshot'
+                    : attempt.passed
+                      ? ru ? 'Пройдено' : 'Passed'
+                      : ru ? 'Нужно улучшить' : 'Needs work'} · {formatDuration(attempt.durationMs)}</span>
                   <div>
-                    <button type="button" onClick={() => onExport(attempt.id)} aria-label={`Export ${attempt.title} replay`}><Download size={16} /></button>
-                    <button type="button" onClick={() => onDelete(attempt.id)} aria-label={`Delete ${attempt.title} replay`}><Trash2 size={16} /></button>
-                    <button className="history-replay-button" type="button" onClick={() => onReplay(attempt.id)}><Play size={15} fill="currentColor" /> Replay</button>
+                    <button type="button" onClick={() => onExport(attempt.id)} aria-label={ru ? `Экспорт повтора «${attempt.title}»` : `Export ${attempt.title} replay`}><Download size={16} /></button>
+                    <button type="button" onClick={() => onDelete(attempt.id)} aria-label={ru ? `Удалить повтор «${attempt.title}»` : `Delete ${attempt.title} replay`}><Trash2 size={16} /></button>
+                    <button className="history-replay-button" type="button" onClick={() => onReplay(attempt.id)}><Play size={15} fill="currentColor" /> {ru ? 'Повтор' : 'Replay'}</button>
                   </div>
                 </div>
               </li>
@@ -158,7 +166,7 @@ export function HistoryPanel({
 
       <footer className="history-panel-footer">
         <input ref={fileInputRef} type="file" accept="application/json,.json" onChange={handleImport} />
-        <button type="button" onClick={() => fileInputRef.current?.click()}><FileUp size={17} /> Import replay</button>
+        <button type="button" onClick={() => fileInputRef.current?.click()}><FileUp size={17} /> {ru ? 'Импортировать повтор' : 'Import replay'}</button>
       </footer>
     </aside>
   )

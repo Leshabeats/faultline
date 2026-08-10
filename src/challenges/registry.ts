@@ -13,7 +13,7 @@ export const challengePacks: Record<ScenarioId, ChallengePack> = {
     definition: urlShortenerChallenge,
     seedNodes,
     seedEdges,
-    defaults: { load: 10, fault: 'cache-outage', tuning: DEFAULT_CAPACITY_TUNING },
+    defaults: { load: 1, fault: 'none', tuning: DEFAULT_CAPACITY_TUNING },
     faults: ['none', 'cache-outage', 'slow-database', 'network-partition', 'retry-storm'],
     panel: 'capacity',
     telemetryLabels: {
@@ -29,7 +29,7 @@ export const challengePacks: Record<ScenarioId, ChallengePack> = {
     definition: newsFeedChallenge,
     seedNodes: newsFeedSeedNodes,
     seedEdges: newsFeedSeedEdges,
-    defaults: { load: 10, fault: 'celebrity-spike', tuning: DEFAULT_NEWS_FEED_TUNING },
+    defaults: { load: 1, fault: 'none', tuning: DEFAULT_NEWS_FEED_TUNING },
     faults: ['none', 'celebrity-spike', 'worker-outage', 'hot-key', 'duplicate-delivery'],
     panel: 'fanout',
     telemetryLabels: {

@@ -14,6 +14,7 @@ export {
   type ReplayEdgeV1,
   type ReplayEnvelopeV1,
   type ReplayEventDraftV1,
+  type ReplayEventContentV1,
   type ReplayEventMetadataV1,
   type ReplayEventSource,
   type ReplayEventV1,
@@ -64,3 +65,7 @@ export {
   type ReplayRepositoryReadResult,
   type StorageLike,
 } from './repository'
+export {
+  serializeScenarioSnapshot,
+  type ScenarioSnapshotInput,
+} from './share'

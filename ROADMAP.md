@@ -33,7 +33,15 @@ Faultline is intentionally shipping as a narrow, playable vertical slice before 
 - Run three public and two redacted hidden cases through a deterministic News Feed judge.
 - Replay both challenge types while keeping pre-v0.3.2 URL Shortener envelopes valid.
 
-## v0.3.3 — Replay and sharing polish
+## v0.3.3 — Architecture Explorer — shipped
+
+- Inspect every component without leaving the board; expose the Short Link API contract, cache keys, database schema, and design responsibilities.
+- Start challenge packs in a healthy 1× state and make faults explicit, including a one-click Redis recovery path.
+- Ramp traffic smoothly to the selected 1×/3×/10× target instead of teleporting metrics to the final load.
+- Configure replicas and shards on the selected canvas node and feed the topology into capacity, availability, cost, and replay.
+- Ship a responsive Russian/English interface with browser-aware defaults and a persistent language switcher.
+
+## v0.3.4 — Replay and sharing polish
 
 - Public URL share links once the Go service exists.
 - More explicit per-node fault targeting.

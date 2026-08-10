@@ -2,13 +2,13 @@ import type {
   CapacityTuning,
   ComponentKind,
   FaultMode,
-  SimulationInput,
+  LoadMultiplier,
 } from '../domain/system'
 
 export const REPLAY_SCHEMA = 'faultline.replay' as const
 export const REPLAY_SCHEMA_VERSION = 1 as const
 
-export type ReplayLoadMultiplier = SimulationInput['loadMultiplier']
+export type ReplayLoadMultiplier = LoadMultiplier
 export type ReplayEventSource = 'user' | 'system' | 'interviewer'
 
 export interface ReplayPositionV1 {
@@ -19,6 +19,8 @@ export interface ReplayPositionV1 {
 export interface ReplayNodeDataV1 {
   kind: ComponentKind
   label: string
+  replicas?: number
+  shards?: number
 }
 
 /** Serializable subset of a React Flow system node. */
@@ -106,7 +108,15 @@ export interface ReplayFaultChangedEventV1 extends ReplayEventBaseV1 {
 
 export interface ReplayCapacityChangedEventV1 extends ReplayEventBaseV1 {
   type: 'capacity.changed'
-  payload: { capacity: CapacityTuning }
+  payload: {
+    capacity: CapacityTuning
+    /** Atomic canvas updates coupled to this tuning transition. */
+    topology?: Array<{
+      nodeId: string
+      replicas: number
+      shards: number
+    }>
+  }
 }
 
 export interface ReplayNodeAddedEventV1 extends ReplayEventBaseV1 {
@@ -193,6 +203,12 @@ type WithoutRecordingMetadata<T> = T extends ReplayEventV1
   : never
 
 export type ReplayEventDraftV1 = WithoutRecordingMetadata<ReplayEventV1>
+
+type WithoutClockMetadata<T> = T extends ReplayEventDraftV1
+  ? Omit<T, 'id' | 'atMs'>
+  : never
+
+export type ReplayEventContentV1 = WithoutClockMetadata<ReplayEventDraftV1>
 
 export interface ReplayAttemptV1 {
   id: string

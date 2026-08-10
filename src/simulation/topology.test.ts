@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { seedEdges, seedNodes } from '../canvas/seed'
 import type { SystemFlowNode } from '../canvas/types'
+import {
+  alignDatabaseReplication,
+  databaseReplicationMatches,
+} from '../domain/topology'
 import { analyzeTopology } from './topology'
 
 const cacheReplica: SystemFlowNode = {
@@ -53,5 +57,36 @@ describe('topology analysis', () => {
 
     expect(result.criticalPathConnected).toBe(false)
     expect(result.componentCounts.database).toBeUndefined()
+  })
+
+  it('turns compact replica and shard controls into routed capacity', () => {
+    const scaled = seedNodes.map((node) => {
+      if (node.data.kind === 'cache') {
+        return { ...node, data: { ...node.data, replicas: 3, shards: 2 } }
+      }
+      if (node.data.kind === 'database') {
+        return { ...node, data: { ...node.data, replicas: 3, shards: 4 } }
+      }
+      return node
+    })
+
+    const result = analyzeTopology(scaled, seedEdges)
+
+    expect(result.componentCounts.cache).toBe(6)
+    expect(result.replicaCounts.cache).toBe(3)
+    // Database read replicas are tracked by CapacityTuning; topology counts shards.
+    expect(result.componentCounts.database).toBe(4)
+    expect(result.replicaCounts.database).toBe(3)
+  })
+
+  it('aligns every database node to the global read-replica policy', () => {
+    const databases = seedNodes.map((node) => node.data.kind === 'database'
+      ? { ...node, data: { ...node.data, replicas: 1 } }
+      : node)
+    const aligned = alignDatabaseReplication(databases, 2)
+
+    expect(databaseReplicationMatches(aligned, 2)).toBe(true)
+    expect(aligned.find((node) => node.data.kind === 'database')?.data.replicas).toBe(3)
+    expect(databaseReplicationMatches(databases, 2)).toBe(false)
   })
 })

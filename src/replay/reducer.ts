@@ -7,6 +7,7 @@ import type {
   ReplayNodeV1,
   ReplayPlaybackStateV1,
 } from './types'
+import { alignDatabaseReplication } from '../domain/topology'
 
 const cloneNode = (node: ReplayNodeV1): ReplayNodeV1 => ({
   ...node,
@@ -42,8 +43,16 @@ export const compareReplayEvents = (left: ReplayEventV1, right: ReplayEventV1) =
 export function createPlaybackState(
   initial: ReplayInitialStateV1,
 ): ReplayPlaybackStateV1 {
+  const cloned = cloneInitialReplayState(initial)
   return {
-    ...cloneInitialReplayState(initial),
+    ...cloned,
+    architecture: {
+      ...cloned.architecture,
+      nodes: alignDatabaseReplication(
+        cloned.architecture.nodes,
+        cloned.capacity?.readReplicas ?? 0,
+      ),
+    },
     currentTimeMs: 0,
     appliedEventIds: [],
     answers: [],
@@ -78,6 +87,24 @@ export function reduceReplayEvent(
       break
     case 'capacity.changed':
       state.capacity = { ...event.payload.capacity }
+      if (event.payload.topology) {
+        const topologyByNodeId = new Map(
+          event.payload.topology.map((topology) => [topology.nodeId, topology]),
+        )
+        state.architecture.nodes = state.architecture.nodes.map((node) => {
+          const topology = topologyByNodeId.get(node.id)
+          return topology
+            ? {
+                ...node,
+                data: {
+                  ...node.data,
+                  replicas: topology.replicas,
+                  shards: topology.shards,
+                },
+              }
+            : node
+        })
+      }
       break
     case 'node.added':
       state.architecture.nodes = replaceById(
@@ -159,6 +186,13 @@ export function reduceReplayEvent(
       })
       break
   }
+
+  // CapacityTuning is the canonical global database replica policy. This also
+  // repairs older capacity.changed/node.updated replays while they are read.
+  state.architecture.nodes = alignDatabaseReplication(
+    state.architecture.nodes,
+    state.capacity?.readReplicas ?? 0,
+  )
 
   return state
 }

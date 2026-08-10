@@ -47,11 +47,48 @@ describe('replay serialization', () => {
       pricingPackId: 'aws-us-east-1-2026.07',
       benchmarkPackId: 'local-m1-pro-2026.08',
     }
+    attempt.initial.architecture.nodes[1].data.replicas = 2
     const parsed = parseReplayEnvelope(serializeReplayEnvelope(attempt))
 
     expect(parsed.ok).toBe(true)
     if (!parsed.ok) return
     expect(parsed.value.attempt.initial.capacity).toEqual(attempt.initial.capacity)
+  })
+
+  it('round-trips compact replica and shard topology on replay nodes', () => {
+    const attempt = createCompletedTestAttempt()
+    attempt.initial.architecture.nodes[1].data.replicas = 3
+    attempt.initial.architecture.nodes[1].data.shards = 4
+    attempt.initial.capacity = {
+      cacheHitRate: 0.95,
+      indexedLookup: true,
+      poolSize: 300,
+      readReplicas: 2,
+      databaseProfile: 'balanced',
+    }
+    const parsed = parseReplayEnvelope(serializeReplayEnvelope(attempt))
+
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+    expect(parsed.value.attempt.initial.architecture.nodes[1].data).toMatchObject({
+      replicas: 3,
+      shards: 4,
+    })
+  })
+
+  it('rejects a versioned replay whose database topology contradicts capacity', () => {
+    const attempt = createCompletedTestAttempt()
+    attempt.initial.architecture.nodes[1].data.replicas = 3
+    attempt.initial.capacity = {
+      cacheHitRate: 0.95,
+      indexedLookup: true,
+      poolSize: 300,
+      readReplicas: 0,
+      databaseProfile: 'balanced',
+    }
+
+    expect(parseReplayEnvelope(JSON.stringify(createReplayEnvelope(attempt))))
+      .toMatchObject({ ok: false, error: { code: 'invalid-replay' } })
   })
 
   it('round-trips the optional news-feed tuning without changing the v1 envelope', () => {
@@ -114,6 +151,8 @@ describe('replay serialization', () => {
             kind: 'client',
             label: 'Clients',
             position: { x: 1, y: 2 },
+            replicas: 3,
+            shards: 4,
           },
         ],
         edges: [],
@@ -128,8 +167,41 @@ describe('replay serialization', () => {
       load: 10,
       fault: 'cache-outage',
       capacity: { indexedLookup: true, readReplicas: 2 },
-      architecture: { nodes: [{ data: { kind: 'client', label: 'Clients' } }] },
+      architecture: {
+        nodes: [{ data: { kind: 'client', label: 'Clients', replicas: 3, shards: 4 } }],
+      },
     })
+  })
+
+  it('aligns legacy database topology to the imported capacity policy', () => {
+    const result = parseReplayEnvelope(JSON.stringify({
+      version: 1,
+      challenge: 'url-shortener',
+      load: 1,
+      fault: 'none',
+      capacity: {
+        cacheHitRate: 0.9,
+        indexedLookup: false,
+        poolSize: 100,
+        readReplicas: 0,
+        databaseProfile: 'balanced',
+      },
+      nodes: [{
+        id: 'database',
+        kind: 'database',
+        label: 'Primary DB',
+        position: { x: 1, y: 2 },
+        replicas: 3,
+        shards: 4,
+      }],
+      edges: [],
+    }))
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value.attempt.initial.architecture.nodes[0].data)
+      .toMatchObject({ replicas: 1, shards: 4 })
+    expect(result.value.attempt.initial.capacity?.readReplicas).toBe(0)
   })
 
   it('rejects a v0.1 snapshot with duplicate nodes or dangling edges', () => {
