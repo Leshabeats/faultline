@@ -1,4 +1,5 @@
 import { compareReplayEvents, cloneInitialReplayState } from './reducer'
+import type { FaultMode, FaultTarget } from '../domain/system'
 import {
   REPLAY_SCHEMA,
   REPLAY_SCHEMA_VERSION,
@@ -6,6 +7,7 @@ import {
   type ReplayEnvelopeV1,
   type ReplayEventDraftV1,
   type ReplayEventV1,
+  type ReplayFaultChangedPayloadV1,
   type ReplayInitialStateV1,
 } from './types'
 
@@ -14,6 +16,29 @@ export interface CreateReplayAttemptInput {
   challengeId: string
   startedAt: string
   initial: ReplayInitialStateV1
+}
+
+export function createReplayFaultChangedPayload(
+  fault: FaultMode,
+  target?: FaultTarget | null,
+): ReplayFaultChangedPayloadV1 {
+  if (fault === 'component-outage') {
+    if (target?.type !== 'node') {
+      throw new RangeError('Component outage requires an exact node target.')
+    }
+    return { fault, targetNodeId: target.id }
+  }
+  if (fault === 'network-partition') {
+    if (!target) return { fault }
+    if (target.type !== 'edge') {
+      throw new RangeError('Network partition requires an exact edge target.')
+    }
+    return { fault, targetEdgeId: target.id }
+  }
+  if (target) {
+    throw new RangeError(`${fault} does not accept an exact target.`)
+  }
+  return { fault }
 }
 
 export function createReplayAttempt(

@@ -1,7 +1,7 @@
 import { Activity, RotateCcw } from 'lucide-react'
 import type { SystemFlowNode } from '../canvas/types'
 import type { Locale } from '../domain/system'
-import { UI_COPY } from '../i18n'
+import { formatAffectedComponents, UI_COPY } from '../i18n'
 import type { TargetedFaultImpact } from '../simulation/faultImpact'
 
 interface BlastRadiusPanelProps {
@@ -34,7 +34,7 @@ export function BlastRadiusPanel({
     <aside className="blast-radius-panel" aria-label={text.blastRadius}>
       <div className="blast-radius-summary">
         <span><Activity size={13} /> {text.blastRadius}</span>
-        <strong>{affectedCount} {text.affectedComponents}</strong>
+        <strong>{formatAffectedComponents(locale, affectedCount)}</strong>
       </div>
       {impact.traceNodeIds.length > 0 && (
         <div className="causal-path">

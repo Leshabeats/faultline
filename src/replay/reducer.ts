@@ -3,10 +3,12 @@ import type {
   ReplayAttemptV1,
   ReplayEdgeV1,
   ReplayEventV1,
+  ReplayFaultChangedEventV1,
   ReplayInitialStateV1,
   ReplayNodeV1,
   ReplayPlaybackStateV1,
 } from './types'
+import type { FaultTarget } from '../domain/system'
 import { alignDatabaseReplication } from '../domain/topology'
 
 const cloneNode = (node: ReplayNodeV1): ReplayNodeV1 => ({
@@ -40,6 +42,19 @@ export const compareReplayEvents = (left: ReplayEventV1, right: ReplayEventV1) =
   left.atMs - right.atMs ||
   left.sequence - right.sequence ||
   left.id.localeCompare(right.id)
+
+/** Resolves the two valid targeted-failure pairs in the replay contract. */
+export const replayFaultTarget = (
+  event: ReplayFaultChangedEventV1,
+): FaultTarget | undefined => {
+  if (event.payload.fault === 'component-outage' && event.payload.targetNodeId) {
+    return { type: 'node', id: event.payload.targetNodeId }
+  }
+  if (event.payload.fault === 'network-partition' && event.payload.targetEdgeId) {
+    return { type: 'edge', id: event.payload.targetEdgeId }
+  }
+  return undefined
+}
 
 export function createPlaybackState(
   initial: ReplayInitialStateV1,
@@ -85,13 +100,7 @@ export function reduceReplayEvent(
       break
     case 'fault.changed':
       state.fault = event.payload.fault
-      state.faultTarget = event.payload.fault === 'none'
-        ? undefined
-        : event.payload.targetNodeId
-          ? { type: 'node', id: event.payload.targetNodeId }
-          : event.payload.targetEdgeId
-            ? { type: 'edge', id: event.payload.targetEdgeId }
-            : undefined
+      state.faultTarget = replayFaultTarget(event)
       break
     case 'capacity.changed':
       state.capacity = { ...event.payload.capacity }

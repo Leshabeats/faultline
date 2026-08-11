@@ -51,7 +51,7 @@ export interface ReplayInitialStateV1 {
   architecture: ReplayArchitectureV1
   load: ReplayLoadMultiplier
   fault: FaultMode
-  /** Optional so v1 replays recorded before targeted failures remain valid. */
+  /** Present only for an exact component outage or edge partition. */
   faultTarget?: FaultTarget
   capacity?: CapacityTuning
 }
@@ -104,13 +104,26 @@ export interface ReplayLoadChangedEventV1 extends ReplayEventBaseV1 {
   payload: { load: ReplayLoadMultiplier }
 }
 
+export type ReplayFaultChangedPayloadV1 =
+  | {
+      fault: 'component-outage'
+      targetNodeId: string
+      targetEdgeId?: never
+    }
+  | {
+      fault: 'network-partition'
+      targetNodeId?: never
+      targetEdgeId?: string
+    }
+  | {
+      fault: Exclude<FaultMode, 'component-outage' | 'network-partition'>
+      targetNodeId?: never
+      targetEdgeId?: never
+    }
+
 export interface ReplayFaultChangedEventV1 extends ReplayEventBaseV1 {
   type: 'fault.changed'
-  payload: {
-    fault: FaultMode
-    targetNodeId?: string
-    targetEdgeId?: string
-  }
+  payload: ReplayFaultChangedPayloadV1
 }
 
 export interface ReplayCapacityChangedEventV1 extends ReplayEventBaseV1 {

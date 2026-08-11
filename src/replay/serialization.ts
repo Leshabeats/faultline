@@ -8,6 +8,7 @@ import {
   compareReplayEvents,
   createPlaybackState,
   reduceReplayEvent,
+  replayFaultTarget,
 } from './reducer'
 import {
   REPLAY_SCHEMA,
@@ -317,10 +318,8 @@ const isEvent = (value: unknown): value is ReplayEventV1 => {
         isOptionalBoundedString(payload.targetEdgeId) &&
         !(payload.targetNodeId !== undefined && payload.targetEdgeId !== undefined) &&
         (payload.fault !== 'component-outage' || payload.targetNodeId !== undefined) &&
-        (payload.targetEdgeId === undefined || payload.fault === 'network-partition') &&
-        (payload.fault !== 'none' || (
-          payload.targetNodeId === undefined && payload.targetEdgeId === undefined
-        ))
+        (payload.targetNodeId === undefined || payload.fault === 'component-outage') &&
+        (payload.targetEdgeId === undefined || payload.fault === 'network-partition')
       )
     case 'capacity.changed':
       return (
@@ -434,6 +433,9 @@ export function validateReplayAttempt(value: unknown): value is ReplayAttemptV1 
   if (initial.fault === 'component-outage' && initial.faultTarget?.type !== 'node') {
     return false
   }
+  if (initial.faultTarget?.type === 'node' && initial.fault !== 'component-outage') {
+    return false
+  }
   if (initial.faultTarget?.type === 'edge' && initial.fault !== 'network-partition') {
     return false
   }
@@ -453,10 +455,11 @@ export function validateReplayAttempt(value: unknown): value is ReplayAttemptV1 
   let playback = createPlaybackState(initial)
   for (const event of [...events].sort(compareReplayEvents)) {
     if (event.type === 'fault.changed') {
-      const targetExists = event.payload.targetNodeId
-        ? playback.architecture.nodes.some((node) => node.id === event.payload.targetNodeId)
-        : event.payload.targetEdgeId
-          ? playback.architecture.edges.some((edge) => edge.id === event.payload.targetEdgeId)
+      const target = replayFaultTarget(event)
+      const targetExists = target?.type === 'node'
+        ? playback.architecture.nodes.some((node) => node.id === target.id)
+        : target?.type === 'edge'
+          ? playback.architecture.edges.some((edge) => edge.id === target.id)
           : true
       if (!targetExists) return false
     }

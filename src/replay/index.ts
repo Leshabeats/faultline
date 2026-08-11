@@ -20,6 +20,7 @@ export {
   type ReplayEventV1,
   type ReplayCapacityChangedEventV1,
   type ReplayFaultChangedEventV1,
+  type ReplayFaultChangedPayloadV1,
   type ReplayInitialStateV1,
   type ReplayKeyMomentV1,
   type ReplayLoadChangedEventV1,
@@ -44,6 +45,7 @@ export {
 export {
   createReplayAttempt,
   createReplayEnvelope,
+  createReplayFaultChangedPayload,
   recordReplayEvent,
   type CreateReplayAttemptInput,
 } from './recorder'

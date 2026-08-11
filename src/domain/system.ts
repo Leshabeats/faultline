@@ -51,9 +51,6 @@ export interface SystemNodeData extends Record<string, unknown> {
   replicas?: number
   /** Data partitions owned by this logical component. */
   shards?: number
-  /** Presentation-only role derived from the active targeted fault. */
-  faultRole?: 'source' | 'affected' | 'isolated'
-  lostReplicas?: number
 }
 
 export interface SimulationMetrics {

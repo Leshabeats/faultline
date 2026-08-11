@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ArchitectureCanvas } from './canvas/ArchitectureCanvas'
 import type { SystemFlowEdge, SystemFlowNode } from './canvas/types'
+import { projectFaultEdges, projectFaultNodes } from './canvas/faultPresentation'
 import { InterviewerPanel } from './components/InterviewerPanel'
 import {
   BottleneckPanel,
@@ -19,7 +20,6 @@ import {
   getChallengePack,
 } from './challenges/registry'
 import {
-  type ComponentHealth,
   type ComponentKind,
   type CapacityTuning,
   type FaultMode,
@@ -61,6 +61,7 @@ import { analyzeTopology } from './simulation/topology'
 import {
   ReplayAttemptRepository,
   createReplayAttempt,
+  createReplayFaultChangedPayload,
   parseReplayEnvelope,
   playReplayAt,
   recordReplayEvent,
@@ -81,12 +82,6 @@ import {
 import { verifyImportedAttempt } from './replay/verification'
 import { UI_COPY, faultLabels as localizedFaultLabels, initialLocale, localizeChallengeDefinition, localizeNodeDetail, localizeNodeLabel, scenarioLabels } from './i18n'
 import { useTrafficRamp } from './simulation/useTrafficRamp'
-
-const toneForHealth = (health: ComponentHealth) => {
-  if (health === 'failed' || health === 'hot') return 'critical' as const
-  if (health === 'degraded' || health === 'backlog') return 'warning' as const
-  return 'healthy' as const
-}
 
 const formatClock = (elapsedSeconds: number) => {
   const minutes = Math.floor(elapsedSeconds / 60)
@@ -471,72 +466,28 @@ export function App() {
 
   useEffect(() => {
     setNodes((current) => {
-      const routedNodeIdSet = new Set(routedNodeIds)
-      const routedCaches = current.filter(
-        (node) => node.data.kind === 'cache' && routedNodeIdSet.has(node.id),
-      )
-      const faultedCacheId = routedCaches[0]?.id
-
-      return current.map((node) => {
-        let health = snapshot.nodeHealth[node.data.kind] ?? 'healthy'
-        let detail = snapshot.nodeDetails[node.data.kind] ?? 'Healthy'
-
-        if (
-          criticalPathConnected &&
-          !routedNodeIdSet.has(node.id) &&
-          node.data.kind !== 'queue' &&
-          node.data.kind !== 'region'
-        ) {
-          health = 'healthy'
-          detail = 'Not on active path'
-        } else if (
-          fault === 'cache-outage' &&
-          node.data.kind === 'cache' &&
-          (replicaCounts.cache ?? routedCaches.length) > 1
-        ) {
-          const separateFailedNode = routedCaches.length > 1 && node.id === faultedCacheId
-          health = separateFailedNode ? 'failed' : 'degraded'
-          detail = separateFailedNode ? 'Unavailable' : detail
-        }
-
-        let faultRole: SystemFlowNode['data']['faultRole']
-        let lostReplicas: number | undefined
-        if (targetedFaultImpact.failedNodeIds.includes(node.id)) {
-          health = 'failed'
-          detail = 'Instance offline'
-          faultRole = 'source'
-          lostReplicas = targetedFaultImpact.lostReplicas
-        } else if (targetedFaultImpact.degradedNodeIds.includes(node.id)) {
-          health = 'degraded'
-          detail = 'One replica offline'
-          faultRole = 'source'
-          lostReplicas = targetedFaultImpact.lostReplicas
-        } else if (targetedFaultImpact.isolatedNodeIds.includes(node.id)) {
-          health = 'failed'
-          detail = 'No route'
-          faultRole = 'isolated'
-        } else if (targetedFaultImpact.affectedNodeIds.includes(node.id)) {
-          faultRole = 'affected'
-        }
-
-        return {
-          ...node,
-          data: {
-            ...node.data,
-            label: localizeNodeLabel(locale, challengeId, node.id, node.data.label),
-            health,
-            detail: localizeNodeDetail(locale, detail),
-            load: effectiveLoad,
-            faultRole,
-            lostReplicas,
-          },
-        }
+      return projectFaultNodes({
+        nodes: current,
+        fault,
+        impact: targetedFaultImpact,
+        routedNodeIds,
+        criticalPathConnected,
+        replicaCounts,
+        nodeHealth: snapshot.nodeHealth,
+        nodeDetails: snapshot.nodeDetails,
+        load: effectiveLoad,
+        resolveLabel: (node) => localizeNodeLabel(
+          locale,
+          challengeId,
+          node.id,
+          node.data.label,
+        ),
+        resolveDetail: (detail) => localizeNodeDetail(locale, detail),
       })
     })
   }, [
     criticalPathConnected,
     challengeId,
-    componentCounts.cache,
     fault,
     locale,
     effectiveLoad,
@@ -550,42 +501,44 @@ export function App() {
   useEffect(() => {
     const healthByNode = new Map(nodes.map((node) => [node.id, node.data.health]))
     setEdges((current) =>
-      current.map((edge) => {
-        const targetHealth = healthByNode.get(edge.target) ?? 'healthy'
-        const severed = targetedFaultImpact.severedEdgeIds.includes(edge.id)
-        const affected = targetedFaultImpact.affectedEdgeIds.includes(edge.id)
-        let label = edge.label
-        if (challengeId === 'news-feed' && edge.id === 'feed-users-api') {
-          label = `${formatMetric(snapshot.metrics.throughput, 'throughput')} deliveries/s`
-        } else if (challengeId === 'news-feed' && edge.id === 'feed-api-store') {
-          label = `${Math.round(effectiveLoad * 2)}k posts/s`
-        } else if (challengeId === 'news-feed' && edge.id === 'feed-api-queue') {
-          label = fault === 'celebrity-spike'
-            ? '50M fan-out'
-            : `${formatMetric(snapshot.metrics.queueDepth, 'queueDepth')} queued`
-        } else if (challengeId === 'news-feed' && edge.id === 'feed-queue-workers') {
-          label = formatMetric(snapshot.metrics.p99, 'p99')
-        } else if (challengeId === 'news-feed' && edge.id === 'feed-workers-cache') {
-          label = normalizeNewsFeedTuning(capacity).strategy
-        } else if (edge.id === 'clients-edge') {
-          label = `${formatMetric(snapshot.metrics.throughput, 'throughput')} req/s`
-        } else if (edge.id === 'api-cache') {
-          label = `${Math.round(snapshot.metrics.cacheMiss)}% miss`
-        } else if (edge.id === 'cache-database') {
-          label = formatMetric(snapshot.metrics.p99, 'p99')
-        }
-        if (severed) label = UI_COPY[locale].connectionPartitioned
-
-        return {
-          ...edge,
-          label,
-          data: {
-            tone: severed ? 'critical' : affected ? 'warning' : toneForHealth(targetHealth),
-            intensity: challengeId === 'news-feed' && fault === 'celebrity-spike' ? 10 : effectiveLoad,
-            paused: severed || (replayAttempt ? !replayPlaying : !playing),
-            faultRole: severed ? 'source' : affected ? 'affected' : undefined,
-          },
-        }
+      projectFaultEdges({
+        edges: current,
+        nodeHealthById: healthByNode,
+        impact: targetedFaultImpact,
+        intensity: challengeId === 'news-feed' && fault === 'celebrity-spike' ? 10 : effectiveLoad,
+        paused: replayAttempt ? !replayPlaying : !playing,
+        resolveLabel: (edge) => {
+          if (targetedFaultImpact.severedEdgeIds.includes(edge.id)) {
+            return UI_COPY[locale].connectionPartitioned
+          }
+          if (challengeId === 'news-feed' && edge.id === 'feed-users-api') {
+            return `${formatMetric(snapshot.metrics.throughput, 'throughput')} deliveries/s`
+          }
+          if (challengeId === 'news-feed' && edge.id === 'feed-api-store') {
+            return `${Math.round(effectiveLoad * 2)}k posts/s`
+          }
+          if (challengeId === 'news-feed' && edge.id === 'feed-api-queue') {
+            return fault === 'celebrity-spike'
+              ? '50M fan-out'
+              : `${formatMetric(snapshot.metrics.queueDepth, 'queueDepth')} queued`
+          }
+          if (challengeId === 'news-feed' && edge.id === 'feed-queue-workers') {
+            return formatMetric(snapshot.metrics.p99, 'p99')
+          }
+          if (challengeId === 'news-feed' && edge.id === 'feed-workers-cache') {
+            return normalizeNewsFeedTuning(capacity).strategy
+          }
+          if (edge.id === 'clients-edge') {
+            return `${formatMetric(snapshot.metrics.throughput, 'throughput')} req/s`
+          }
+          if (edge.id === 'api-cache') {
+            return `${Math.round(snapshot.metrics.cacheMiss)}% miss`
+          }
+          if (edge.id === 'cache-database') {
+            return formatMetric(snapshot.metrics.p99, 'p99')
+          }
+          return edge.label
+        },
       }),
     )
   }, [capacity, challengeId, effectiveLoad, fault, locale, nodes, playing, replayAttempt, replayPlaying, snapshot.metrics, targetedFaultImpact])
@@ -662,11 +615,7 @@ export function App() {
       recordAction({
         type: 'fault.changed',
         source: 'user',
-        payload: {
-          fault: nextFault,
-          ...(nextTarget?.type === 'node' ? { targetNodeId: nextTarget.id } : {}),
-          ...(nextTarget?.type === 'edge' ? { targetEdgeId: nextTarget.id } : {}),
-        },
+        payload: createReplayFaultChangedPayload(nextFault, nextTarget),
         timeline: {
           title: nextFault === 'none'
             ? locale === 'ru' ? 'Сбой снят' : 'Fault cleared'

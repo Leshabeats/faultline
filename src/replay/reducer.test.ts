@@ -1,9 +1,28 @@
 import { describe, expect, it } from 'vitest'
 import { playReplayAt } from './reducer'
-import { createReplayAttempt, recordReplayEvent } from './recorder'
+import {
+  createReplayAttempt,
+  createReplayFaultChangedPayload,
+  recordReplayEvent,
+} from './recorder'
 import { createTestAttempt, event, testArchitecture, timestamp } from './testFixtures'
 
 describe('replay reduction', () => {
+  it('builds only valid fault and exact-target pairs', () => {
+    expect(createReplayFaultChangedPayload(
+      'component-outage',
+      { type: 'node', id: 'database' },
+    )).toEqual({ fault: 'component-outage', targetNodeId: 'database' })
+    expect(createReplayFaultChangedPayload(
+      'network-partition',
+      { type: 'edge', id: 'client-database' },
+    )).toEqual({ fault: 'network-partition', targetEdgeId: 'client-database' })
+    expect(() => createReplayFaultChangedPayload(
+      'cache-outage',
+      { type: 'node', id: 'database' },
+    )).toThrow(/does not accept/)
+  })
+
   it('anchors the first content action at zero', () => {
     expect(() =>
       recordReplayEvent(
@@ -135,7 +154,7 @@ describe('replay reduction', () => {
         atMs: 1_000,
         source: 'user',
         type: 'fault.changed',
-        payload: { fault: 'cache-outage', targetNodeId: 'cache' },
+        payload: { fault: 'component-outage', targetNodeId: 'cache' },
       }),
     )
     attempt = recordReplayEvent(
@@ -195,7 +214,7 @@ describe('replay reduction', () => {
 
     const atStress = playReplayAt(attempt, 1_000)
     expect(atStress.load).toBe(10)
-    expect(atStress.fault).toBe('cache-outage')
+    expect(atStress.fault).toBe('component-outage')
     expect(atStress.faultTarget).toEqual({ type: 'node', id: 'cache' })
     expect(atStress.answers).toHaveLength(0)
     expect(playReplayAt(attempt, 1_250).capacity).toMatchObject({

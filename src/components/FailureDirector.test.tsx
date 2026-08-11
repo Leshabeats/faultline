@@ -74,8 +74,36 @@ describe('Failure Director', () => {
     expect(html).toContain('Short Link API')
     expect(html).toContain('Redis')
     expect(html).toContain('Primary DB')
+    expect(html).toContain('6 компонентов затронуто')
     expect(html).not.toContain('Очередь')
     expect(html).toContain('Восстановить компонент')
     expect(html).not.toContain('Blast radius')
+  })
+
+  it('uses the singular blast-radius form in English', () => {
+    const analyzedImpact = analyzeTargetedFault(
+      seedNodes,
+      seedEdges,
+      { type: 'node', id: 'database' },
+    )
+    const impact = {
+      ...analyzedImpact,
+      failedNodeIds: ['database'],
+      degradedNodeIds: [],
+      isolatedNodeIds: [],
+      affectedNodeIds: [],
+    }
+    const html = renderToStaticMarkup(
+      <BlastRadiusPanel
+        impact={impact}
+        nodes={seedNodes}
+        locale="en"
+        readOnly
+        onRestore={vi.fn()}
+      />,
+    )
+
+    expect(html).toContain('1 affected component')
+    expect(html).not.toContain('1 affected components')
   })
 })

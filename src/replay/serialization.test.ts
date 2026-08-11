@@ -55,7 +55,7 @@ describe('replay serialization', () => {
     expect(parsed.value.attempt.initial.capacity).toEqual(attempt.initial.capacity)
   })
 
-  it('round-trips a targeted failure while accepting older v1 replays without one', () => {
+  it('round-trips both targeted and untargeted fault states', () => {
     const targeted = createCompletedTestAttempt()
     targeted.initial.fault = 'component-outage'
     targeted.initial.faultTarget = { type: 'node', id: 'database' }
@@ -66,14 +66,26 @@ describe('replay serialization', () => {
     expect(targetedResult.value.attempt.initial.faultTarget)
       .toEqual({ type: 'node', id: 'database' })
 
-    const legacy = createCompletedTestAttempt()
-    const legacyResult = parseReplayEnvelope(serializeReplayEnvelope(legacy))
-    expect(legacyResult.ok).toBe(true)
-    if (!legacyResult.ok) return
-    expect(legacyResult.value.attempt.initial).not.toHaveProperty('faultTarget')
+    const untargeted = createCompletedTestAttempt()
+    const untargetedResult = parseReplayEnvelope(serializeReplayEnvelope(untargeted))
+    expect(untargetedResult.ok).toBe(true)
+    if (!untargetedResult.ok) return
+    expect(untargetedResult.value.attempt.initial).not.toHaveProperty('faultTarget')
   })
 
-  it('rejects ambiguous or dangling targeted failures', () => {
+  it('rejects mismatched, ambiguous, or dangling targeted failures', () => {
+    const mismatched = createCompletedTestAttempt()
+    mismatched.events.push({
+      id: 'mismatched-fault',
+      atMs: mismatched.durationMs,
+      sequence: mismatched.events.length,
+      source: 'user',
+      type: 'fault.changed',
+      payload: { fault: 'cache-outage', targetNodeId: 'database' },
+    } as never)
+    expect(parseReplayEnvelope(JSON.stringify(createReplayEnvelope(mismatched))).ok)
+      .toBe(false)
+
     const ambiguous = createCompletedTestAttempt()
     ambiguous.events.push({
       id: 'ambiguous-fault',
@@ -86,13 +98,19 @@ describe('replay serialization', () => {
         targetNodeId: 'database',
         targetEdgeId: 'client-database',
       },
-    })
+    } as never)
     expect(parseReplayEnvelope(JSON.stringify({
       schema: 'faultline.replay',
       version: 1,
       exportedAt: ambiguous.updatedAt,
       attempt: ambiguous,
     })).ok).toBe(false)
+
+    const mismatchedInitial = createCompletedTestAttempt()
+    mismatchedInitial.initial.fault = 'cache-outage'
+    mismatchedInitial.initial.faultTarget = { type: 'node', id: 'database' }
+    expect(parseReplayEnvelope(JSON.stringify(createReplayEnvelope(mismatchedInitial))).ok)
+      .toBe(false)
 
     const dangling = createCompletedTestAttempt()
     dangling.initial.fault = 'component-outage'

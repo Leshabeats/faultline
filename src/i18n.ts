@@ -42,7 +42,11 @@ export const UI_COPY = {
     connectionPartitioned: 'Traffic stops at this boundary.',
     causalPath: 'Causal path',
     blastRadius: 'Blast radius',
-    affectedComponents: 'affected components',
+    affectedComponents: {
+      one: 'affected component',
+      few: 'affected components',
+      other: 'affected components',
+    },
     oneReplicaOffline: 'One replica offline',
     instanceOffline: 'Instance offline',
     noFault: 'No fault',
@@ -89,7 +93,11 @@ export const UI_COPY = {
     connectionPartitioned: 'Трафик останавливается на этой границе.',
     causalPath: 'Причинная цепочка',
     blastRadius: 'Радиус поражения',
-    affectedComponents: 'компонентов затронуто',
+    affectedComponents: {
+      one: 'компонент затронут',
+      few: 'компонента затронуто',
+      other: 'компонентов затронуто',
+    },
     oneReplicaOffline: 'Одна реплика отключена',
     instanceOffline: 'Экземпляр отключён',
     noFault: 'Без сбоя',
@@ -97,6 +105,12 @@ export const UI_COPY = {
     requests: 'запросов/с',
   },
 } as const
+
+export function formatAffectedComponents(locale: Locale, count: number) {
+  const category = new Intl.PluralRules(locale).select(count)
+  const form = category === 'one' || category === 'few' ? category : 'other'
+  return `${count} ${UI_COPY[locale].affectedComponents[form]}`
+}
 
 export const componentLabels: Record<Locale, Record<ComponentKind, string>> = {
   en: {

@@ -1,5 +1,6 @@
 import type { SystemFlowEdge, SystemFlowNode } from '../canvas/types'
-import type { ComponentHealth, FaultMode, FaultTarget, Locale, ScenarioId } from '../domain/system'
+import { projectFaultEdges, projectFaultNodes } from '../canvas/faultPresentation'
+import type { FaultMode, FaultTarget, Locale, ScenarioId } from '../domain/system'
 import { componentLabels, faultLabels } from '../i18n'
 import { normalizeNodeTopology } from '../domain/topology'
 import type { CapacityTuning } from '../domain/system'
@@ -23,12 +24,6 @@ export interface ReplayTimelineItem {
   title: string
   detail: string
   tone: ReplayTimelineTone
-}
-
-const toneForHealth = (health: ComponentHealth) => {
-  if (health === 'failed' || health === 'hot') return 'critical' as const
-  if (health === 'degraded' || health === 'backlog') return 'warning' as const
-  return 'healthy' as const
 }
 
 export const createStableId = (prefix: string) => {
@@ -128,89 +123,47 @@ export const presentReplayFrame = (
     capacity: frame.capacity,
     scenario,
   })
-  const routedNodeIdSet = new Set(analysis.routedNodeIds)
-  const routedCaches = baseNodes.filter(
-    (node) => node.data.kind === 'cache' && routedNodeIdSet.has(node.id),
-  )
-  const faultedCacheId = routedCaches[0]?.id
-  const nodes = baseNodes.map((node) => {
-    let health = simulation.nodeHealth[node.data.kind] ?? 'healthy'
-    let detail = simulation.nodeDetails[node.data.kind] ?? 'Healthy'
-    let faultRole: SystemFlowNode['data']['faultRole']
-    let lostReplicas: number | undefined
-    if (
-      analysis.criticalPathConnected &&
-      !routedNodeIdSet.has(node.id) &&
-      node.data.kind !== 'queue' &&
-      node.data.kind !== 'region'
-    ) {
-      health = 'healthy'
-      detail = 'Not on active path'
-    } else if (
-      frame.fault === 'cache-outage' &&
-      node.data.kind === 'cache' &&
-      (analysis.replicaCounts.cache ?? routedCaches.length) > 1
-    ) {
-      health = node.id === faultedCacheId ? 'failed' : 'degraded'
-      detail = node.id === faultedCacheId ? 'Unavailable' : detail
-    }
-    if (targetedImpact.failedNodeIds.includes(node.id)) {
-      health = 'failed'
-      detail = 'Instance offline'
-      faultRole = 'source'
-      lostReplicas = targetedImpact.lostReplicas
-    } else if (targetedImpact.degradedNodeIds.includes(node.id)) {
-      health = 'degraded'
-      detail = 'One replica offline'
-      faultRole = 'source'
-      lostReplicas = targetedImpact.lostReplicas
-    } else if (targetedImpact.isolatedNodeIds.includes(node.id)) {
-      health = 'failed'
-      detail = 'No route'
-      faultRole = 'isolated'
-    } else if (targetedImpact.affectedNodeIds.includes(node.id)) {
-      faultRole = 'affected'
-    }
-    return {
-      ...node,
-      data: { ...node.data, health, detail, faultRole, lostReplicas },
-    }
+  const nodes = projectFaultNodes({
+    nodes: baseNodes,
+    fault: frame.fault,
+    impact: targetedImpact,
+    routedNodeIds: analysis.routedNodeIds,
+    criticalPathConnected: analysis.criticalPathConnected,
+    replicaCounts: analysis.replicaCounts,
+    nodeHealth: simulation.nodeHealth,
+    nodeDetails: simulation.nodeDetails,
+    load: frame.load,
   })
   const healthByNode = new Map(nodes.map((node) => [node.id, node.data.health]))
-  const edges = baseEdges.map((edge) => {
-    const targetHealth = healthByNode.get(edge.target) ?? 'healthy'
-    let label = edge.label
-    if (scenario === 'news-feed' && edge.id === 'feed-users-api') {
-      label = `${formatMetric(simulation.metrics.throughput, 'throughput')} deliveries/s`
-    } else if (scenario === 'news-feed' && edge.id === 'feed-api-queue') {
-      label = frame.fault === 'celebrity-spike' ? '50M fan-out' : `${formatMetric(simulation.metrics.queueDepth, 'queueDepth')} queued`
-    } else if (scenario === 'news-feed' && edge.id === 'feed-queue-workers') {
-      label = formatMetric(simulation.metrics.p99, 'p99')
-    } else if (edge.id === 'clients-edge') {
-      label = `${formatMetric(simulation.metrics.throughput, 'throughput')} req/s`
-    } else if (edge.id === 'api-cache') {
-      label = `${Math.round(simulation.metrics.cacheMiss)}% miss`
-    } else if (edge.id === 'cache-database') {
-      label = formatMetric(simulation.metrics.p99, 'p99')
-    }
-    return {
-      ...edge,
-      label,
-      data: {
-        tone: targetedImpact.severedEdgeIds.includes(edge.id)
-          ? 'critical'
-          : targetedImpact.affectedEdgeIds.includes(edge.id)
-            ? 'warning'
-            : toneForHealth(targetHealth),
-        intensity: frame.load,
-        paused: paused || targetedImpact.severedEdgeIds.includes(edge.id),
-        ...(targetedImpact.severedEdgeIds.includes(edge.id)
-          ? { faultRole: 'source' as const }
-          : targetedImpact.affectedEdgeIds.includes(edge.id)
-            ? { faultRole: 'affected' as const }
-            : {}),
-      },
-    }
+  const edges = projectFaultEdges({
+    edges: baseEdges,
+    nodeHealthById: healthByNode,
+    impact: targetedImpact,
+    intensity: frame.load,
+    paused,
+    resolveLabel: (edge) => {
+      if (scenario === 'news-feed' && edge.id === 'feed-users-api') {
+        return `${formatMetric(simulation.metrics.throughput, 'throughput')} deliveries/s`
+      }
+      if (scenario === 'news-feed' && edge.id === 'feed-api-queue') {
+        return frame.fault === 'celebrity-spike'
+          ? '50M fan-out'
+          : `${formatMetric(simulation.metrics.queueDepth, 'queueDepth')} queued`
+      }
+      if (scenario === 'news-feed' && edge.id === 'feed-queue-workers') {
+        return formatMetric(simulation.metrics.p99, 'p99')
+      }
+      if (edge.id === 'clients-edge') {
+        return `${formatMetric(simulation.metrics.throughput, 'throughput')} req/s`
+      }
+      if (edge.id === 'api-cache') {
+        return `${Math.round(simulation.metrics.cacheMiss)}% miss`
+      }
+      if (edge.id === 'cache-database') {
+        return formatMetric(simulation.metrics.p99, 'p99')
+      }
+      return edge.label
+    },
   })
   return { nodes, edges, faultImpact: targetedImpact }
 }
