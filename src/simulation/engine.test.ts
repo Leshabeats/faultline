@@ -197,7 +197,7 @@ describe('computeSimulation', () => {
     expect(redundant.metrics.p99).toBeLessThan(single.metrics.p99)
   })
 
-  it('fails the request path when the graph no longer connects clients to a database', () => {
+  it('fails requests without claiming reachable components are physically down', () => {
     const disconnected = computeSimulation({
       loadMultiplier: 3,
       fault: 'none',
@@ -208,7 +208,8 @@ describe('computeSimulation', () => {
 
     expect(disconnected.metrics.errorRate).toBeGreaterThanOrEqual(88)
     expect(disconnected.metrics.throughput).toBeLessThan(10_000)
-    expect(disconnected.nodeHealth.service).toBe('failed')
+    expect(disconnected.nodeHealth.service).toBe('healthy')
+    expect(disconnected.nodeHealth.gateway).toBe('healthy')
     expect(disconnected.nodeDetails.service).toBe('No route')
     expect(disconnected.nodeDetails.gateway).toBe('Route degraded')
   })

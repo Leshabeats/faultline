@@ -89,6 +89,34 @@ describe('replay presentation', () => {
       })
   })
 
+  it('replays a Redis outage through the direct database fallback', () => {
+    const attempt = createReplayAttempt({
+      id: 'cache-fallback-presentation',
+      challengeId: 'url-shortener',
+      startedAt: '2026-08-03T10:00:00.000Z',
+      initial: toReplayInitial(
+        seedNodes,
+        seedEdges,
+        1,
+        'component-outage',
+        undefined,
+        { type: 'node', id: 'cache' },
+      ),
+    })
+
+    const presentation = presentReplayFrame(playReplayAt(attempt, 0), 0, false)
+
+    expect(presentation.faultImpact.summary?.routeDisconnected).toBe(false)
+    expect(presentation.nodes.find(({ id }) => id === 'cache')?.data)
+      .toMatchObject({ health: 'failed', detail: 'Instance offline' })
+    expect(presentation.nodes.find(({ id }) => id === 'api')?.data)
+      .toMatchObject({ health: 'healthy' })
+    expect(presentation.nodes.find(({ id }) => id === 'database')?.data)
+      .toMatchObject({ health: 'healthy' })
+    expect(presentation.nodes.filter((node) => node.data.faultRole === 'isolated'))
+      .toHaveLength(0)
+  })
+
   it('sorts imported timeline events independently from their JSON order', () => {
     const attempt = createTestAttempt()
     attempt.events = [

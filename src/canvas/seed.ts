@@ -107,6 +107,15 @@ export const seedEdges: SystemFlowEdge[] = [
     data: { tone: 'healthy', intensity: 1, paused: false },
   },
   {
+    id: 'api-database',
+    type: 'traffic',
+    source: 'api',
+    target: 'database',
+    sourceHandle: 'bottom',
+    targetHandle: 'top',
+    data: { tone: 'healthy', intensity: 1, paused: false },
+  },
+  {
     id: 'cache-database',
     type: 'traffic',
     source: 'cache',

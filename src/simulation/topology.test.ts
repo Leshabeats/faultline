@@ -49,10 +49,23 @@ describe('topology analysis', () => {
     expect(result.routedNodeIds).toContain(cacheReplica.id)
   })
 
-  it('fails closed after the final client-to-database route is removed', () => {
+  it('keeps the direct database fallback when the cache path is removed', () => {
     const result = analyzeTopology(
       seedNodes,
-      seedEdges.filter((edge) => edge.id !== 'cache-database'),
+      seedEdges.filter((edge) => edge.id !== 'api-cache' && edge.id !== 'cache-database'),
+    )
+
+    expect(result.criticalPathConnected).toBe(true)
+    expect(result.routedNodeIds).not.toContain('cache')
+    expect(result.componentCounts.database).toBe(1)
+  })
+
+  it('fails closed after both database routes are removed', () => {
+    const result = analyzeTopology(
+      seedNodes,
+      seedEdges.filter(
+        (edge) => edge.id !== 'cache-database' && edge.id !== 'api-database',
+      ),
     )
 
     expect(result.criticalPathConnected).toBe(false)

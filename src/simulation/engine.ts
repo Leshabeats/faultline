@@ -240,8 +240,6 @@ function computeUrlShortenerSimulation(input: SimulationInput): SimulationSnapsh
     metrics.p99 = Math.max(metrics.p99, 1_500)
     metrics.errorRate = Math.max(metrics.errorRate, 88)
     metrics.queueDepth = Math.max(metrics.queueDepth, 1_200 * load)
-    nodeHealth.service = 'failed'
-    nodeHealth.gateway = 'degraded'
   }
 
   metrics = applyTargetedFaultImpact(metrics, input)

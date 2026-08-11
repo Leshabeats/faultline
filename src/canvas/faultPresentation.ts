@@ -84,7 +84,6 @@ export function projectFaultNodes({
       faultRole = 'source'
       lostReplicas = impact.lostReplicas
     } else if (isolatedNodeIds.has(node.id)) {
-      health = 'failed'
       detail = 'No route'
       faultRole = 'isolated'
     } else if (affectedNodeIds.has(node.id)) {
