@@ -7,6 +7,7 @@ export interface SystemEdgeData extends Record<string, unknown> {
   tone: 'healthy' | 'warning' | 'critical'
   intensity: number
   paused: boolean
+  faultRole?: 'source' | 'affected'
 }
 
 export type SystemFlowEdge = Edge<SystemEdgeData, 'traffic'>

@@ -17,6 +17,7 @@ export function TrafficEdge({
   data,
   label,
   markerEnd,
+  selected,
 }: EdgeProps<SystemFlowEdge>) {
   const [edgePath, labelX, labelY] = getBezierPath({
     sourceX,
@@ -28,6 +29,7 @@ export function TrafficEdge({
     curvature: 0.28,
   })
   const tone = data?.tone ?? 'healthy'
+  const faultClass = data?.faultRole ? `fault-${data.faultRole}` : ''
 
   return (
     <>
@@ -35,11 +37,11 @@ export function TrafficEdge({
         id={id}
         path={edgePath}
         markerEnd={markerEnd}
-        className={`traffic-edge-base tone-${tone}`}
+        className={`traffic-edge-base tone-${tone} ${faultClass} ${selected ? 'is-selected' : ''}`}
       />
       <path
         d={edgePath}
-        className={`traffic-edge-flow tone-${tone} ${data?.paused ? 'is-paused' : ''}`}
+        className={`traffic-edge-flow tone-${tone} ${data?.paused ? 'is-paused' : ''} ${faultClass} ${selected ? 'is-selected' : ''}`}
         style={{
           animationDuration: `${Math.max(0.58, 1.5 - (data?.intensity ?? 1) * 0.07)}s`,
         }}

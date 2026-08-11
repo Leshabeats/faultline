@@ -5,6 +5,7 @@ import { computeSimulation } from './engine'
 const loads = [1, 3, 10] as const
 const faults: FaultMode[] = [
   'none',
+  'component-outage',
   'cache-outage',
   'slow-database',
   'network-partition',
@@ -210,6 +211,50 @@ describe('computeSimulation', () => {
     expect(disconnected.nodeHealth.service).toBe('failed')
     expect(disconnected.nodeDetails.service).toBe('No route')
     expect(disconnected.nodeDetails.gateway).toBe('Route degraded')
+  })
+
+  it('degrades capacity when one targeted service replica is lost', () => {
+    const healthy = computeSimulation({
+      loadMultiplier: 3,
+      fault: 'none',
+      tick: 0,
+      criticalPathConnected: true,
+    })
+    const outage = computeSimulation({
+      loadMultiplier: 3,
+      fault: 'component-outage',
+      tick: 0,
+      criticalPathConnected: true,
+      faultImpact: {
+        targetType: 'node',
+        componentKind: 'service',
+        remainingReplicas: 1,
+        routeDisconnected: false,
+      },
+    })
+
+    expect(outage.metrics.throughput).toBeLessThan(healthy.metrics.throughput)
+    expect(outage.metrics.p99).toBeGreaterThan(healthy.metrics.p99)
+    expect(outage.metrics.errorRate).toBeGreaterThan(healthy.metrics.errorRate)
+  })
+
+  it('models a partitioned edge as partial loss when another route survives', () => {
+    const healthy = computeSimulation({ loadMultiplier: 3, fault: 'none', tick: 0 })
+    const partition = computeSimulation({
+      loadMultiplier: 3,
+      fault: 'network-partition',
+      tick: 0,
+      criticalPathConnected: true,
+      faultImpact: {
+        targetType: 'edge',
+        remainingReplicas: 0,
+        routeDisconnected: false,
+      },
+    })
+
+    expect(partition.metrics.throughput).toBeLessThan(healthy.metrics.throughput)
+    expect(partition.metrics.errorRate).toBeGreaterThan(healthy.metrics.errorRate)
+    expect(partition.metrics.errorRate).toBeLessThan(20)
   })
 
   it('applies candidate capacity decisions to the live failure metrics', () => {

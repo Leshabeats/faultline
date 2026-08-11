@@ -1,10 +1,10 @@
 import type { SystemFlowEdge, SystemFlowNode } from '../canvas/types'
-import type { ComponentHealth, FaultMode, Locale, ScenarioId } from '../domain/system'
+import type { ComponentHealth, FaultMode, FaultTarget, Locale, ScenarioId } from '../domain/system'
 import { componentLabels, faultLabels } from '../i18n'
 import { normalizeNodeTopology } from '../domain/topology'
 import type { CapacityTuning } from '../domain/system'
 import { computeSimulation, formatMetric } from '../simulation/engine'
-import { analyzeTopology } from '../simulation/topology'
+import { analyzeTargetedFault } from '../simulation/faultImpact'
 import { serializeReplayEnvelope } from './serialization'
 import { compareReplayEvents } from './reducer'
 import type {
@@ -68,10 +68,12 @@ export const toReplayInitial = (
   load: 1 | 3 | 10,
   fault: FaultMode,
   capacity?: CapacityTuning,
+  faultTarget?: FaultTarget | null,
 ): ReplayInitialStateV1 => ({
   architecture: { nodes: nodes.map(toReplayNode), edges: edges.map(toReplayEdge) },
   load,
   fault,
+  ...(faultTarget ? { faultTarget: { ...faultTarget } } : {}),
   ...(capacity ? { capacity: { ...capacity } } : {}),
 })
 
@@ -107,7 +109,12 @@ export const presentReplayFrame = (
 ) => {
   const baseNodes = frame.architecture.nodes.map((node) => fromReplayNode(node, frame.load))
   const baseEdges = frame.architecture.edges.map((edge) => fromReplayEdge(edge, frame.load, paused))
-  const analysis = analyzeTopology(baseNodes, baseEdges)
+  const targetedImpact = analyzeTargetedFault(
+    baseNodes,
+    baseEdges,
+    frame.fault === 'none' ? null : frame.faultTarget ?? null,
+  )
+  const analysis = targetedImpact.topology
   const simulation = computeSimulation({
     loadMultiplier: frame.load,
     fault: frame.fault,
@@ -117,6 +124,7 @@ export const presentReplayFrame = (
     componentCounts: analysis.componentCounts,
     replicaCounts: analysis.replicaCounts,
     criticalPathConnected: analysis.criticalPathConnected,
+    faultImpact: targetedImpact.summary,
     capacity: frame.capacity,
     scenario,
   })
@@ -128,6 +136,8 @@ export const presentReplayFrame = (
   const nodes = baseNodes.map((node) => {
     let health = simulation.nodeHealth[node.data.kind] ?? 'healthy'
     let detail = simulation.nodeDetails[node.data.kind] ?? 'Healthy'
+    let faultRole: SystemFlowNode['data']['faultRole']
+    let lostReplicas: number | undefined
     if (
       analysis.criticalPathConnected &&
       !routedNodeIdSet.has(node.id) &&
@@ -144,7 +154,27 @@ export const presentReplayFrame = (
       health = node.id === faultedCacheId ? 'failed' : 'degraded'
       detail = node.id === faultedCacheId ? 'Unavailable' : detail
     }
-    return { ...node, data: { ...node.data, health, detail } }
+    if (targetedImpact.failedNodeIds.includes(node.id)) {
+      health = 'failed'
+      detail = 'Instance offline'
+      faultRole = 'source'
+      lostReplicas = targetedImpact.lostReplicas
+    } else if (targetedImpact.degradedNodeIds.includes(node.id)) {
+      health = 'degraded'
+      detail = 'One replica offline'
+      faultRole = 'source'
+      lostReplicas = targetedImpact.lostReplicas
+    } else if (targetedImpact.isolatedNodeIds.includes(node.id)) {
+      health = 'failed'
+      detail = 'No route'
+      faultRole = 'isolated'
+    } else if (targetedImpact.affectedNodeIds.includes(node.id)) {
+      faultRole = 'affected'
+    }
+    return {
+      ...node,
+      data: { ...node.data, health, detail, faultRole, lostReplicas },
+    }
   })
   const healthByNode = new Map(nodes.map((node) => [node.id, node.data.health]))
   const edges = baseEdges.map((edge) => {
@@ -167,13 +197,22 @@ export const presentReplayFrame = (
       ...edge,
       label,
       data: {
-        tone: toneForHealth(targetHealth),
+        tone: targetedImpact.severedEdgeIds.includes(edge.id)
+          ? 'critical'
+          : targetedImpact.affectedEdgeIds.includes(edge.id)
+            ? 'warning'
+            : toneForHealth(targetHealth),
         intensity: frame.load,
-        paused,
+        paused: paused || targetedImpact.severedEdgeIds.includes(edge.id),
+        ...(targetedImpact.severedEdgeIds.includes(edge.id)
+          ? { faultRole: 'source' as const }
+          : targetedImpact.affectedEdgeIds.includes(edge.id)
+            ? { faultRole: 'affected' as const }
+            : {}),
       },
     }
   })
-  return { nodes, edges }
+  return { nodes, edges, faultImpact: targetedImpact }
 }
 
 const legacyReplayTranslations = [

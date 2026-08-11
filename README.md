@@ -17,9 +17,10 @@ The current release has two coherent challenge packs: a calibrated URL Shortener
 1. Read the challenge and capacity requirements.
 2. Predict the first bottleneck and commit the reasoning before seeing the model.
 3. Build a topology, tune the read or fan-out path, and watch latency, freshness, saturation, and estimated cost move together.
-4. Defend the trade-off when the interviewer challenges the assumptions.
-5. Submit against the complete deterministic judge, including redacted hidden cases.
-6. Replay the exact architecture, capacity choices, load, fault, reasoning, and submission sequence.
+4. Take an exact component replica or connection offline, inspect the animated blast radius, then recover it.
+5. Defend the trade-off when the interviewer challenges the assumptions.
+6. Submit against the complete deterministic judge, including redacted hidden cases.
+7. Replay the exact architecture, capacity choices, targeted fault, reasoning, and submission sequence.
 
 The launch topology scores `76/100`. Connecting a complete second cache path makes the cache-outage case pass and raises the score to `83/100`; dropping an unconnected box onto the canvas changes nothing.
 
@@ -32,6 +33,8 @@ The launch topology scores `76/100`. Connecting a complete second cache path mak
 - Interactive system canvas with draggable, connectable components built on React Flow.
 - Click-through component inspector with the Short Link API endpoints, Redis cache keys, database schema, responsibilities, and design decisions.
 - Topology controls on the diagram: replicas and shards are visible on each node and change capacity, availability, database cost, and replay state.
+- Failure Director: take one replica or a complete component offline, partition an exact connection, and restore it from the canvas.
+- Graph-derived blast-radius animation with a real causal path, isolated components, alternate-route handling, and live metric impact.
 - Russian and English product UI with browser-aware defaults and a persistent language switcher.
 - A URL Shortener challenge statement with requirements, scale, three public cases, and two redacted hidden cases.
 - The Celebrity Problem: a News Feed challenge with normal traffic, a 50M-follower spike, worker outage, hot-key, and duplicate-delivery cases.
@@ -46,11 +49,11 @@ The launch topology scores `76/100`. Connecting a complete second cache path mak
 - A reproducible local benchmark pack with real `pgbench` and `redis-benchmark` results, plus strict validation for the public pack format.
 - Deterministic target-load controls (`1x`, `3x`, `10x`) with a 2.8-second animated user ramp and challenge-specific fault injection menus.
 - A local interviewer with follow-up questions, hints, design review, and answer feedback informed by the current diagram and simulation metrics.
-- Semantic attempt recording for load, fault, topology, capacity tuning, interviewer-answer, and submission actions without storing derived animation noise.
+- Semantic attempt recording for load, exact node/edge fault target, topology, capacity tuning, interviewer-answer, and submission actions without storing derived animation noise.
 - Local attempt history with deterministic play/pause, scrub, previous/next event controls, `0.5x`/`1x`/`2x` speed, and synchronized metrics.
 - Versioned public replay export/import, strict validation, safe local-storage retention, and migration from the v0.1 scenario snapshot.
 - Interview timer, pause/run control, event history, full component creation, and responsive desktop/mobile layouts.
-- Unit coverage for simulation behavior, topology reachability, judge scoring/redaction, provider routing, replay reduction, serialization, migration, and persistence.
+- Unit coverage for simulation behavior, targeted-fault graph impact, topology reachability, judge scoring/redaction, provider routing, replay reduction, serialization, migration, and persistence.
 
 ## Run locally
 
@@ -75,6 +78,8 @@ npm run preview   # serve the production bundle locally
 ## Simulation truth and interview providers
 
 The simulation engine is the source of truth. Given the same workload, capacity choices, topology, fault, and tick, it computes the same state, node health, metrics, and estimate. An interview provider may interpret that state, ask a question, or critique an answer; it must not invent or overwrite simulation results.
+
+Failure Director derives reachability, surviving replicas, alternate routes, isolated components, and causal paths from the actual graph. Its latency, error, throughput, and queue penalties are deterministic teaching estimates layered onto the calibrated capacity model; they are not production measurements.
 
 Cost is intentionally labeled `Estimated`. The default price pack uses checked AWS `us-east-1` on-demand rates for Fargate, Application Load Balancer, ElastiCache for Valkey, SQS, RDS for PostgreSQL, and gp3. The rates are verified; traffic shape, provisioned quantities, retention, replicas, and excluded services remain modeled, so the result is an architecture subtotal rather than a cloud bill forecast.
 

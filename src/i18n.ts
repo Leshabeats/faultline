@@ -31,6 +31,20 @@ export const UI_COPY = {
     topologyHint: 'These controls change the simulation, capacity, and cost.',
     unavailableBecause: 'Unavailable because Cache outage is active.',
     clearFault: 'Restore Redis',
+    failureDirector: 'Failure Director',
+    failReplica: 'Take one replica offline',
+    failComponent: 'Take component offline',
+    restoreComponent: 'Restore component',
+    partitionConnection: 'Partition connection',
+    restoreConnection: 'Restore connection',
+    connection: 'Connection',
+    connectionHealthy: 'Traffic is flowing normally.',
+    connectionPartitioned: 'Traffic stops at this boundary.',
+    causalPath: 'Causal path',
+    blastRadius: 'Blast radius',
+    affectedComponents: 'affected components',
+    oneReplicaOffline: 'One replica offline',
+    instanceOffline: 'Instance offline',
     noFault: 'No fault',
     selected: 'Selected component',
     requests: 'requests/s',
@@ -64,6 +78,20 @@ export const UI_COPY = {
     topologyHint: 'Эти настройки меняют симуляцию, ёмкость и стоимость.',
     unavailableBecause: 'Redis недоступен, потому что включён сбой кеша.',
     clearFault: 'Восстановить Redis',
+    failureDirector: 'Режиссёр отказов',
+    failReplica: 'Отключить одну реплику',
+    failComponent: 'Отключить компонент',
+    restoreComponent: 'Восстановить компонент',
+    partitionConnection: 'Разорвать соединение',
+    restoreConnection: 'Восстановить соединение',
+    connection: 'Соединение',
+    connectionHealthy: 'Трафик проходит штатно.',
+    connectionPartitioned: 'Трафик останавливается на этой границе.',
+    causalPath: 'Причинная цепочка',
+    blastRadius: 'Радиус поражения',
+    affectedComponents: 'компонентов затронуто',
+    oneReplicaOffline: 'Одна реплика отключена',
+    instanceOffline: 'Экземпляр отключён',
     noFault: 'Без сбоя',
     selected: 'Выбранный компонент',
     requests: 'запросов/с',
@@ -83,13 +111,13 @@ export const componentLabels: Record<Locale, Record<ComponentKind, string>> = {
 
 export const faultLabels: Record<Locale, Record<FaultMode, string>> = {
   en: {
-    none: 'No fault', 'cache-outage': 'Cache outage', 'slow-database': 'Slow database',
+    none: 'No fault', 'component-outage': 'Component outage', 'cache-outage': 'Cache outage', 'slow-database': 'Slow database',
     'network-partition': 'Network partition', 'retry-storm': 'Retry storm',
     'celebrity-spike': 'Celebrity spike', 'worker-outage': 'Worker outage',
     'hot-key': 'Hot key', 'duplicate-delivery': 'Duplicate delivery',
   },
   ru: {
-    none: 'Без сбоя', 'cache-outage': 'Отказ кеша', 'slow-database': 'Медленная БД',
+    none: 'Без сбоя', 'component-outage': 'Отказ компонента', 'cache-outage': 'Отказ кеша', 'slow-database': 'Медленная БД',
     'network-partition': 'Разрыв сети', 'retry-storm': 'Шторм повторов',
     'celebrity-spike': 'Скачок знаменитости', 'worker-outage': 'Отказ воркеров',
     'hot-key': 'Горячий ключ', 'duplicate-delivery': 'Дубли доставки',
@@ -149,6 +177,9 @@ export function localizeNodeDetail(locale: Locale, detail: string) {
     .replace('Connected', 'Подключён')
     .replace('Draining', 'Опустошается')
     .replace('Half fleet down', 'Половина флота недоступна')
+    .replace('One replica offline', 'Одна реплика отключена')
+    .replace('Instance offline', 'Экземпляр отключён')
+    .replace('Blast radius', 'Радиус поражения')
     .replace('Celebrity hot key', 'Горячий ключ знаменитости')
     .replace(' req/s', ' запр/с')
     .replace(' reads/s', ' чтений/с')

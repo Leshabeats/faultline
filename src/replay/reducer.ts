@@ -32,6 +32,7 @@ export const cloneInitialReplayState = (
   architecture: cloneArchitecture(initial.architecture),
   load: initial.load,
   fault: initial.fault,
+  ...(initial.faultTarget ? { faultTarget: { ...initial.faultTarget } } : {}),
   ...(initial.capacity ? { capacity: { ...initial.capacity } } : {}),
 })
 
@@ -84,6 +85,13 @@ export function reduceReplayEvent(
       break
     case 'fault.changed':
       state.fault = event.payload.fault
+      state.faultTarget = event.payload.fault === 'none'
+        ? undefined
+        : event.payload.targetNodeId
+          ? { type: 'node', id: event.payload.targetNodeId }
+          : event.payload.targetEdgeId
+            ? { type: 'edge', id: event.payload.targetEdgeId }
+            : undefined
       break
     case 'capacity.changed':
       state.capacity = { ...event.payload.capacity }
@@ -185,6 +193,16 @@ export function reduceReplayEvent(
         ...event.payload.submission,
       })
       break
+  }
+
+  if (state.faultTarget) {
+    const targetStillExists = state.faultTarget.type === 'node'
+      ? state.architecture.nodes.some((node) => node.id === state.faultTarget?.id)
+      : state.architecture.edges.some((edge) => edge.id === state.faultTarget?.id)
+    if (!targetStillExists) {
+      state.fault = 'none'
+      state.faultTarget = undefined
+    }
   }
 
   // CapacityTuning is the canonical global database replica policy. This also

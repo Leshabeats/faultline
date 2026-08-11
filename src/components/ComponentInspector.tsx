@@ -1,7 +1,7 @@
 import { Activity, Braces, Minus, Network, Plus, RotateCcw, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { SystemFlowNode } from '../canvas/types'
-import type { FaultMode, Locale, ScenarioId } from '../domain/system'
+import type { FaultMode, FaultTarget, Locale, ScenarioId } from '../domain/system'
 import {
   MAX_REPLICAS_BY_KIND,
   normalizeNodeTopology,
@@ -64,8 +64,9 @@ interface ComponentInspectorProps {
   scenario: ScenarioId
   locale: Locale
   fault: FaultMode
+  faultTarget: FaultTarget | null
   onClose: () => void
-  onFaultChange: (fault: FaultMode) => void
+  onFaultChange: (fault: FaultMode, target?: FaultTarget) => void
   onTopologyChange: (nodeId: string, topology: NodeTopology) => void
 }
 
@@ -74,6 +75,7 @@ export function ComponentInspector({
   scenario,
   locale,
   fault,
+  faultTarget,
   onClose,
   onFaultChange,
   onTopologyChange,
@@ -89,6 +91,9 @@ export function ComponentInspector({
   const canReplicate = node.data.kind !== 'client' && node.data.kind !== 'region'
   const canShard = node.data.kind === 'cache' || node.data.kind === 'database'
   const cacheUnavailable = node.data.kind === 'cache' && fault === 'cache-outage'
+  const targeted = fault === 'component-outage' &&
+    faultTarget?.type === 'node' &&
+    faultTarget.id === node.id
 
   const setTopology = (next: Partial<NodeTopology>) =>
     onTopologyChange(node.id, normalizeNodeTopology(node.data.kind, {
@@ -110,6 +115,23 @@ export function ComponentInspector({
         <span className={`health-pill health-${node.data.health}`}><i /> {node.data.detail}</span>
         <span>{replicas}× · {shards} {locale === 'ru' ? 'шард.' : `shard${shards === 1 ? '' : 's'}`}</span>
       </div>
+
+      <section className={`failure-director-card ${targeted ? 'is-active' : ''}`}>
+        <span className="inspector-kicker"><Activity size={14} /> {text.failureDirector}</span>
+        <button
+          type="button"
+          onClick={() => targeted
+            ? onFaultChange('none')
+            : onFaultChange('component-outage', { type: 'node', id: node.id })}
+        >
+          {targeted ? <RotateCcw size={15} /> : <Activity size={15} />}
+          {targeted
+            ? text.restoreComponent
+            : replicas > 1
+              ? text.failReplica
+              : text.failComponent}
+        </button>
+      </section>
 
       {cacheUnavailable && (
         <div className="inspector-fault-note">

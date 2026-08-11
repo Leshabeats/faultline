@@ -1,9 +1,14 @@
-import type { CapacityTuning, ComponentKind, FaultMode } from '../domain/system'
+import type { CapacityTuning, ComponentKind, FaultMode, FaultTarget } from '../domain/system'
 import {
   alignDatabaseReplication,
   databaseReplicationMatches,
 } from '../domain/topology'
-import { cloneInitialReplayState } from './reducer'
+import {
+  cloneInitialReplayState,
+  compareReplayEvents,
+  createPlaybackState,
+  reduceReplayEvent,
+} from './reducer'
 import {
   REPLAY_SCHEMA,
   REPLAY_SCHEMA_VERSION,
@@ -55,6 +60,7 @@ const componentKinds: ComponentKind[] = [
 ]
 const faultModes: FaultMode[] = [
   'none',
+  'component-outage',
   'cache-outage',
   'slow-database',
   'network-partition',
@@ -107,6 +113,12 @@ const isLoad = (value: unknown): value is ReplayLoadMultiplier =>
 
 const isFault = (value: unknown): value is FaultMode =>
   faultModes.includes(value as FaultMode)
+
+const isFaultTarget = (value: unknown): value is FaultTarget =>
+  isRecord(value) &&
+  hasOnlyKeys(value, ['type', 'id']) &&
+  (value.type === 'node' || value.type === 'edge') &&
+  isBoundedString(value.id)
 
 const isCapacityTuning = (value: unknown) =>
   isRecord(value) &&
@@ -299,9 +311,16 @@ const isEvent = (value: unknown): value is ReplayEventV1 => {
       return hasOnlyKeys(payload, ['load']) && isLoad(payload.load)
     case 'fault.changed':
       return (
-        hasOnlyKeys(payload, ['fault', 'targetNodeId']) &&
+        hasOnlyKeys(payload, ['fault', 'targetNodeId', 'targetEdgeId']) &&
         isFault(payload.fault) &&
-        isOptionalBoundedString(payload.targetNodeId)
+        isOptionalBoundedString(payload.targetNodeId) &&
+        isOptionalBoundedString(payload.targetEdgeId) &&
+        !(payload.targetNodeId !== undefined && payload.targetEdgeId !== undefined) &&
+        (payload.fault !== 'component-outage' || payload.targetNodeId !== undefined) &&
+        (payload.targetEdgeId === undefined || payload.fault === 'network-partition') &&
+        (payload.fault !== 'none' || (
+          payload.targetNodeId === undefined && payload.targetEdgeId === undefined
+        ))
       )
     case 'capacity.changed':
       return (
@@ -397,10 +416,11 @@ export function validateReplayAttempt(value: unknown): value is ReplayAttemptV1 
     !isIsoDate(value.updatedAt) ||
     !isNonNegativeInteger(value.durationMs) ||
     !isRecord(value.initial) ||
-    !hasOnlyKeys(value.initial, ['architecture', 'load', 'fault', 'capacity']) ||
+    !hasOnlyKeys(value.initial, ['architecture', 'load', 'fault', 'faultTarget', 'capacity']) ||
     !isArchitecture(value.initial.architecture) ||
     !isLoad(value.initial.load) ||
     !isFault(value.initial.fault) ||
+    (value.initial.faultTarget !== undefined && !isFaultTarget(value.initial.faultTarget)) ||
     (value.initial.capacity !== undefined && !isCapacityTuning(value.initial.capacity)) ||
     !Array.isArray(value.events) ||
     value.events.length > REPLAY_IMPORT_LIMITS.maxEvents ||
@@ -411,12 +431,37 @@ export function validateReplayAttempt(value: unknown): value is ReplayAttemptV1 
   }
 
   const initial = value.initial as unknown as ReplayAttemptV1['initial']
+  if (initial.fault === 'component-outage' && initial.faultTarget?.type !== 'node') {
+    return false
+  }
+  if (initial.faultTarget?.type === 'edge' && initial.fault !== 'network-partition') {
+    return false
+  }
+  if (initial.faultTarget) {
+    if (initial.fault === 'none') return false
+    const targetExists = initial.faultTarget.type === 'node'
+      ? initial.architecture.nodes.some((node) => node.id === initial.faultTarget?.id)
+      : initial.architecture.edges.some((edge) => edge.id === initial.faultTarget?.id)
+    if (!targetExists) return false
+  }
   if (!databaseReplicationMatches(
     initial.architecture.nodes,
     initial.capacity?.readReplicas ?? 0,
   )) return false
 
   const events = value.events as ReplayEventV1[]
+  let playback = createPlaybackState(initial)
+  for (const event of [...events].sort(compareReplayEvents)) {
+    if (event.type === 'fault.changed') {
+      const targetExists = event.payload.targetNodeId
+        ? playback.architecture.nodes.some((node) => node.id === event.payload.targetNodeId)
+        : event.payload.targetEdgeId
+          ? playback.architecture.edges.some((edge) => edge.id === event.payload.targetEdgeId)
+          : true
+      if (!targetExists) return false
+    }
+    playback = reduceReplayEvent(playback, event)
+  }
   return (
     new Set(events.map((event) => event.id)).size === events.length &&
     new Set(events.map((event) => event.sequence)).size === events.length &&

@@ -196,6 +196,7 @@ describe('replay reduction', () => {
     const atStress = playReplayAt(attempt, 1_000)
     expect(atStress.load).toBe(10)
     expect(atStress.fault).toBe('cache-outage')
+    expect(atStress.faultTarget).toEqual({ type: 'node', id: 'cache' })
     expect(atStress.answers).toHaveLength(0)
     expect(playReplayAt(attempt, 1_250).capacity).toMatchObject({
       indexedLookup: true,
@@ -206,6 +207,66 @@ describe('replay reduction', () => {
     expect(completed.currentTimeMs).toBe(2_000)
     expect(completed.answers[0].answer).toBe('Add request coalescing.')
     expect(completed.submissions[0]).toMatchObject({ score: 75, passedCases: 3 })
+  })
+
+  it('replays an exact edge partition and clears its target on recovery', () => {
+    let attempt = createTestAttempt()
+    attempt = recordReplayEvent(
+      attempt,
+      event({
+        id: 'partition-edge',
+        atMs: 0,
+        source: 'user',
+        type: 'fault.changed',
+        payload: { fault: 'network-partition', targetEdgeId: 'client-database' },
+      }),
+    )
+    attempt = recordReplayEvent(
+      attempt,
+      event({
+        id: 'restore-edge',
+        atMs: 1_000,
+        source: 'user',
+        type: 'fault.changed',
+        payload: { fault: 'none' },
+      }),
+    )
+
+    expect(playReplayAt(attempt, 0).faultTarget)
+      .toEqual({ type: 'edge', id: 'client-database' })
+    expect(playReplayAt(attempt, 1_000)).toMatchObject({
+      fault: 'none',
+      faultTarget: undefined,
+    })
+  })
+
+  it('clears a targeted failure when its graph element is removed', () => {
+    let attempt = createTestAttempt()
+    attempt = recordReplayEvent(
+      attempt,
+      event({
+        id: 'target-database',
+        atMs: 0,
+        source: 'user',
+        type: 'fault.changed',
+        payload: { fault: 'component-outage', targetNodeId: 'database' },
+      }),
+    )
+    attempt = recordReplayEvent(
+      attempt,
+      event({
+        id: 'remove-database-target',
+        atMs: 500,
+        source: 'user',
+        type: 'node.removed',
+        payload: { nodeId: 'database' },
+      }),
+    )
+
+    expect(playReplayAt(attempt, 500)).toMatchObject({
+      fault: 'none',
+      faultTarget: undefined,
+    })
   })
 
   it('uses timestamp, sequence, and id ordering instead of input array order', () => {

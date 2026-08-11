@@ -9,9 +9,11 @@ import {
   type NodeChange,
   type ReactFlowInstance,
 } from '@xyflow/react'
-import type { ComponentKind, LoadMultiplier, Locale, ScenarioId, TelemetryPoint } from '../domain/system'
+import type { ComponentKind, FaultTarget, LoadMultiplier, Locale, ScenarioId, TelemetryPoint } from '../domain/system'
+import { BlastRadiusPanel } from '../components/BlastRadiusPanel'
 import { ComponentDock } from '../components/ComponentDock'
 import { ComponentInspector } from '../components/ComponentInspector'
+import { ConnectionInspector } from '../components/ConnectionInspector'
 import { SimulationControls } from '../components/SimulationControls'
 import { TelemetryRibbon } from '../components/TelemetryRibbon'
 import { SystemNode } from './SystemNode'
@@ -19,6 +21,7 @@ import { TrafficEdge } from './TrafficEdge'
 import type { SystemFlowEdge, SystemFlowNode } from './types'
 import type { FaultMode } from '../domain/system'
 import type { NodeTopology } from '../domain/topology'
+import type { TargetedFaultImpact } from '../simulation/faultImpact'
 import { useEffect, useRef, type ReactNode } from 'react'
 
 const nodeTypes = { system: SystemNode }
@@ -34,6 +37,9 @@ interface ArchitectureCanvasProps {
   locale: Locale
   scenario: ScenarioId
   selectedNode: SystemFlowNode | null
+  selectedEdge: SystemFlowEdge | null
+  faultTarget: FaultTarget | null
+  faultImpact: TargetedFaultImpact
   telemetry: TelemetryPoint[]
   onNodesChange: (changes: NodeChange<SystemFlowNode>[]) => void
   onEdgesChange: (changes: EdgeChange<SystemFlowEdge>[]) => void
@@ -41,10 +47,11 @@ interface ArchitectureCanvasProps {
   onNodeDragStop?: (node: SystemFlowNode) => void
   onAddNode: (kind: ComponentKind) => void
   onNodeSelected: (node: SystemFlowNode) => void
+  onEdgeSelected: (edge: SystemFlowEdge) => void
   onInspectorClose: () => void
   onTopologyChange: (nodeId: string, topology: NodeTopology) => void
   onLoadChange: (load: LoadMultiplier) => void
-  onFaultChange: (fault: FaultMode) => void
+  onFaultChange: (fault: FaultMode, target?: FaultTarget) => void
   readOnly?: boolean
   bottomOverlay?: ReactNode
   fitViewKey?: string
@@ -63,6 +70,9 @@ export function ArchitectureCanvas({
   locale,
   scenario,
   selectedNode,
+  selectedEdge,
+  faultTarget,
+  faultImpact,
   telemetry,
   onNodesChange,
   onEdgesChange,
@@ -70,6 +80,7 @@ export function ArchitectureCanvas({
   onNodeDragStop,
   onAddNode,
   onNodeSelected,
+  onEdgeSelected,
   onInspectorClose,
   onTopologyChange,
   onLoadChange,
@@ -89,10 +100,10 @@ export function ArchitectureCanvas({
       void flowRef.current?.fitView({ padding: 0.18, maxZoom: 1, duration: 260 })
     })
     return () => window.cancelAnimationFrame(frame)
-  }, [fitViewKey, selectedNode?.id])
+  }, [fitViewKey, selectedEdge?.id, selectedNode?.id])
 
   return (
-    <main className={`canvas-region ${selectedNode ? 'inspector-visible' : ''}`} aria-label={locale === 'ru' ? 'Схема архитектуры системы' : 'System architecture canvas'}>
+    <main className={`canvas-region ${selectedNode || selectedEdge ? 'inspector-visible' : ''}`} aria-label={locale === 'ru' ? 'Схема архитектуры системы' : 'System architecture canvas'}>
       <div className="flow-surface">
         <ReactFlow<SystemFlowNode, SystemFlowEdge>
           key={fitViewKey}
@@ -105,6 +116,7 @@ export function ArchitectureCanvas({
           onConnect={onConnect}
           onNodeDragStop={readOnly || !onNodeDragStop ? undefined : (_, node) => onNodeDragStop(node)}
           onNodeClick={readOnly ? undefined : (_, node) => onNodeSelected(node)}
+          onEdgeClick={readOnly ? undefined : (_, edge) => onEdgeSelected(edge)}
           defaultEdgeOptions={{
             type: 'traffic',
             markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14 },
@@ -150,17 +162,35 @@ export function ArchitectureCanvas({
           onQuickAdd={onAddNode}
           faults={faults}
         />}
+        <BlastRadiusPanel
+          impact={faultImpact}
+          nodes={nodes}
+          locale={locale}
+          readOnly={readOnly}
+          onRestore={() => onFaultChange('none')}
+        />
         {bottomOverlay}
       </div>
-      {!readOnly && <ComponentInspector
-        node={selectedNode}
-        scenario={scenario}
-        locale={locale}
-        fault={fault}
-        onClose={onInspectorClose}
-        onFaultChange={onFaultChange}
-        onTopologyChange={onTopologyChange}
-      />}
+      {!readOnly && (selectedEdge
+        ? <ConnectionInspector
+            edge={selectedEdge}
+            nodes={nodes}
+            locale={locale}
+            fault={fault}
+            faultTarget={faultTarget}
+            onClose={onInspectorClose}
+            onFaultChange={onFaultChange}
+          />
+        : <ComponentInspector
+            node={selectedNode}
+            scenario={scenario}
+            locale={locale}
+            fault={fault}
+            faultTarget={faultTarget}
+            onClose={onInspectorClose}
+            onFaultChange={onFaultChange}
+            onTopologyChange={onTopologyChange}
+          />)}
     </main>
   )
 }

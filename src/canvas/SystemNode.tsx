@@ -7,10 +7,11 @@ export function SystemNode({ data, selected }: NodeProps<SystemFlowNode>) {
   const { replicas, shards } = normalizeNodeTopology(data.kind, data)
   return (
     <article
-      className={`system-node health-${data.health} ${selected ? 'is-selected' : ''} ${replicas > 1 ? 'has-replicas' : ''}`}
+      className={`system-node health-${data.health} ${selected ? 'is-selected' : ''} ${replicas > 1 ? 'has-replicas' : ''} ${data.faultRole ? `fault-${data.faultRole}` : ''}`}
       aria-label={`${data.label}, ${data.detail}`}
     >
       {replicas > 1 && <span className="node-replica-stack" aria-hidden="true" />}
+      {data.lostReplicas ? <span className="node-replica-loss" aria-hidden="true">−{data.lostReplicas}</span> : null}
       <Handle id="left" type="target" position={Position.Left} />
       <Handle id="top" type="target" position={Position.Top} />
       <div className="system-node-icon">

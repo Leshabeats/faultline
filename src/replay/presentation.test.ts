@@ -34,6 +34,61 @@ describe('replay presentation', () => {
     })
   })
 
+  it('presents the exact replayed connection as partitioned', () => {
+    const attempt = createReplayAttempt({
+      id: 'targeted-presentation',
+      challengeId: 'url-shortener',
+      startedAt: '2026-08-03T10:00:00.000Z',
+      initial: toReplayInitial(
+        seedNodes,
+        seedEdges,
+        1,
+        'network-partition',
+        undefined,
+        { type: 'edge', id: 'api-cache' },
+      ),
+    })
+
+    const presentation = presentReplayFrame(playReplayAt(attempt, 0), 0, false)
+    const target = presentation.edges.find((edge) => edge.id === 'api-cache')
+
+    expect(target?.data).toMatchObject({
+      tone: 'critical',
+      paused: true,
+      faultRole: 'source',
+    })
+    expect(presentation.faultImpact.target)
+      .toEqual({ type: 'edge', id: 'api-cache' })
+  })
+
+  it('presents the exact replayed replica loss on its source node', () => {
+    const replicatedNodes = seedNodes.map((node) => node.id === 'api'
+      ? { ...node, data: { ...node.data, replicas: 2 } }
+      : node)
+    const attempt = createReplayAttempt({
+      id: 'targeted-node-presentation',
+      challengeId: 'url-shortener',
+      startedAt: '2026-08-03T10:00:00.000Z',
+      initial: toReplayInitial(
+        replicatedNodes,
+        seedEdges,
+        1,
+        'component-outage',
+        undefined,
+        { type: 'node', id: 'api' },
+      ),
+    })
+
+    const presentation = presentReplayFrame(playReplayAt(attempt, 0), 0, false)
+    expect(presentation.nodes.find((node) => node.id === 'api')?.data)
+      .toMatchObject({
+        health: 'degraded',
+        detail: 'One replica offline',
+        faultRole: 'source',
+        lostReplicas: 1,
+      })
+  })
+
   it('sorts imported timeline events independently from their JSON order', () => {
     const attempt = createTestAttempt()
     attempt.events = [

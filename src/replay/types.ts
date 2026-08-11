@@ -2,6 +2,7 @@ import type {
   CapacityTuning,
   ComponentKind,
   FaultMode,
+  FaultTarget,
   LoadMultiplier,
 } from '../domain/system'
 
@@ -50,6 +51,8 @@ export interface ReplayInitialStateV1 {
   architecture: ReplayArchitectureV1
   load: ReplayLoadMultiplier
   fault: FaultMode
+  /** Optional so v1 replays recorded before targeted failures remain valid. */
+  faultTarget?: FaultTarget
   capacity?: CapacityTuning
 }
 
@@ -103,7 +106,11 @@ export interface ReplayLoadChangedEventV1 extends ReplayEventBaseV1 {
 
 export interface ReplayFaultChangedEventV1 extends ReplayEventBaseV1 {
   type: 'fault.changed'
-  payload: { fault: FaultMode; targetNodeId?: string }
+  payload: {
+    fault: FaultMode
+    targetNodeId?: string
+    targetEdgeId?: string
+  }
 }
 
 export interface ReplayCapacityChangedEventV1 extends ReplayEventBaseV1 {
