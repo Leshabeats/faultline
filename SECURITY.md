@@ -10,4 +10,4 @@ Please use GitHub's private vulnerability reporting for this repository. Do not 
 
 Include the affected version or commit, reproduction conditions, likely impact, and a minimal proof of concept when one is safe to share. Maintainers will acknowledge a report as soon as practical and coordinate disclosure after a fix is available.
 
-The current browser-only release makes no model or analytics API calls and requires no API keys. Future remote AI providers must keep credentials behind the server boundary.
+The browser app still makes no model or analytics API calls and requires no API keys. The optional local Go service stores only redacted public replay envelopes; delete tokens are hashed at rest and never returned by GET. Future remote AI providers must keep credentials behind the server boundary.

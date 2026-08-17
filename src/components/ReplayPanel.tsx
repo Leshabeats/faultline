@@ -1,4 +1,4 @@
-import { Check, CircleX, Download, List } from 'lucide-react'
+import { Check, CircleX, Download, Globe, List, Trash2 } from 'lucide-react'
 import type { ReplayTimelineEvent } from './ReplayTimeline'
 import type { Locale } from '../domain/system'
 
@@ -12,6 +12,13 @@ interface ReplayPanelProps {
   activeEventId?: string
   onSeek: (cursorMs: number) => void
   onExport: () => void
+  onPublish?: () => void
+  publishedUrl?: string
+  publicMode?: boolean
+  scoreDisclaimer?: string
+  onDeletePublication?: () => void
+  deletingPublication?: boolean
+  deleteError?: string
 }
 
 const formatDuration = (valueMs: number) => {
@@ -31,18 +38,31 @@ export function ReplayPanel({
   activeEventId,
   onSeek,
   onExport,
+  onPublish,
+  publishedUrl,
+  publicMode = false,
+  scoreDisclaimer,
+  onDeletePublication,
+  deletingPublication = false,
+  deleteError,
 }: ReplayPanelProps) {
   const ru = locale === 'ru'
   return (
     <aside className="replay-panel" aria-label={ru ? 'Сводка повтора попытки' : 'Attempt replay summary'}>
       <header className="replay-panel-header">
         <div>
-          <strong>{ru ? 'Повтор попытки' : 'Attempt replay'}</strong>
-          <span>{ru ? 'Воспроизведение без изменений' : 'Read-only playback'}</span>
+          <strong>{publicMode
+            ? ru ? 'Публичный повтор' : 'Public replay'
+            : ru ? 'Повтор попытки' : 'Attempt replay'}</strong>
+          <span>{publicMode
+            ? ru ? 'Только просмотр по ссылке' : 'Read-only shared attempt'
+            : ru ? 'Воспроизведение без изменений' : 'Read-only playback'}</span>
         </div>
-        <button type="button" onClick={onExport} aria-label={ru ? 'Экспортировать повтор' : 'Export replay'}>
-          <Download size={18} />
-        </button>
+        {!publicMode && (
+          <button type="button" onClick={onExport} aria-label={ru ? 'Экспортировать повтор' : 'Export replay'}>
+            <Download size={18} />
+          </button>
+        )}
       </header>
       <div className="replay-panel-body">
         <section className="replay-score">
@@ -60,7 +80,32 @@ export function ReplayPanel({
                   : ru ? 'Нужно улучшить' : 'Needs work'}
             </span>
           </div>
+          {scoreDisclaimer && <p className="replay-score-disclaimer">{scoreDisclaimer}</p>}
         </section>
+
+        {!publicMode && onPublish && (
+          <section className="replay-publish">
+            <button type="button" onClick={onPublish}>
+              <Globe size={16} />
+              {publishedUrl
+                ? ru ? 'Управление ссылкой' : 'Manage public link'
+                : ru ? 'Опубликовать повтор' : 'Publish replay'}
+            </button>
+            {publishedUrl && <small>{publishedUrl}</small>}
+          </section>
+        )}
+
+        {publicMode && onDeletePublication && (
+          <section className="replay-publish">
+            <button type="button" onClick={onDeletePublication} disabled={deletingPublication}>
+              <Trash2 size={16} />
+              {deletingPublication
+                ? ru ? 'Удаление…' : 'Removing…'
+                : ru ? 'Удалить публикацию' : 'Unpublish replay'}
+            </button>
+            {deleteError && <p className="publish-error" role="alert">{deleteError}</p>}
+          </section>
+        )}
 
         <section className="replay-key-moment">
           <span>{ru ? 'Ключевой момент' : 'Key moment'}</span>

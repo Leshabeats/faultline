@@ -16,3 +16,9 @@ vite.config.d.ts
 *.local
 *.log
 npm-debug.log*
+
+backend/data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm

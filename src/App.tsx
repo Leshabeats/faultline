@@ -14,6 +14,7 @@ import {
 import { ChallengePanel } from './components/ChallengePanel'
 import { FanoutPanel, type FanoutPrediction } from './components/FanoutPanel'
 import { HistoryPanel, type HistoryAttemptItem } from './components/HistoryPanel'
+import { PublishReplayDialog } from './components/PublishReplayDialog'
 import { ReplayPanel } from './components/ReplayPanel'
 import { ReplayTimeline } from './components/ReplayTimeline'
 import { TopBar } from './components/TopBar'
@@ -86,6 +87,17 @@ import {
 import { verifyImportedAttempt } from './replay/verification'
 import { UI_COPY, faultLabels as localizedFaultLabels, initialLocale, localizeChallengeDefinition, localizeNodeDetail, localizeNodeLabel, scenarioLabels } from './i18n'
 import { useTrafficRamp } from './simulation/useTrafficRamp'
+import {
+  FetchPublicReplayClient,
+  createPublicReplayCapabilityStore,
+  createPublicReplayEnvelope,
+  previewPublicReplay,
+  publicReplayHref,
+  nextPublishRetry,
+  publicReplayErrorCopy,
+  resolvePublishAttempt,
+  type PublicReplayError,
+} from './publicReplay'
 
 const formatClock = (elapsedSeconds: number) => {
   const minutes = Math.floor(elapsedSeconds / 60)
@@ -157,6 +169,18 @@ export function App() {
   const [events, setEvents] = useState<TimelineEvent[]>(() => initialEvents(initialLocale()))
   const [judgeReport, setJudgeReport] = useState<JudgeReport | null>(null)
   const [replayRepository] = useState(createReplayRepository)
+  const [capabilityStore] = useState(createPublicReplayCapabilityStore)
+  const [publicReplayClient] = useState(() => new FetchPublicReplayClient())
+  const [capabilitiesVersion, setCapabilitiesVersion] = useState(0)
+  const [publishAttempt, setPublishAttempt] = useState<ReplayAttemptV1 | null>(null)
+  const publishAttemptRef = useRef<ReplayAttemptV1 | null>(null)
+  publishAttemptRef.current = publishAttempt
+  const [publishStatus, setPublishStatus] = useState<'confirm' | 'publishing' | 'ready' | 'error'>('confirm')
+  const [publishUrl, setPublishUrl] = useState<string>()
+  const [publishError, setPublishError] = useState<string>()
+  const [publishCopied, setPublishCopied] = useState(false)
+  const [publishAction, setPublishAction] = useState<'publish' | 'unpublish'>('publish')
+  const [lastSubmittedAttempt, setLastSubmittedAttempt] = useState<ReplayAttemptV1 | null>(null)
   const [savedAttempts, setSavedAttempts] = useState<ReplayAttemptV1[]>(() => {
     try {
       return replayRepository.list()
@@ -331,9 +355,10 @@ export function App() {
         score: attempt.summary?.score,
         passed: attempt.summary?.passed,
         keyMoment: replayKeyMoment(attempt, locale),
+        publicUrl: capabilityStore.getByAttemptId(attempt.id)?.url,
       }
     }),
-    [locale, savedAttempts],
+    [capabilityStore, capabilitiesVersion, locale, savedAttempts],
   )
 
   const [telemetry, setTelemetry] = useState<TelemetryPoint[]>(() =>
@@ -708,6 +733,7 @@ export function App() {
     setChallengeOpen(true)
     setHistoryOpen(false)
     setJudgeReport(null)
+    setLastSubmittedAttempt(null)
     setBottleneckPrediction(null)
     setPredictionRationale('')
     setPredictionLocked(false)
@@ -934,6 +960,7 @@ export function App() {
         } : fallbackKeyMoment(locale, recorded.initial.fault, recorded.durationMs),
       },
     }
+    setLastSubmittedAttempt(completed)
     try {
       replayRepository.save(completed)
       setSavedAttempts(replayRepository.list())
@@ -1054,6 +1081,136 @@ export function App() {
     liveStateBeforeReplayRef.current = null
     setInterviewerOpen(true)
   }, [])
+
+  const publishErrorCopy = useCallback((error: PublicReplayError) => {
+    return publicReplayErrorCopy(locale, error)
+  }, [locale])
+
+  const openPublish = useCallback((attemptId: string) => {
+    const attempt = resolvePublishAttempt(attemptId, [
+      lastSubmittedAttempt,
+      replayAttempt,
+      ...savedAttempts,
+    ])
+    if (!attempt) return
+    const existing = capabilityStore.getByAttemptId(attempt.id)
+    setPublishAttempt(attempt)
+    setPublishStatus(existing ? 'ready' : 'confirm')
+    setPublishUrl(existing?.url)
+    setPublishError(undefined)
+    setPublishCopied(false)
+    setPublishAction('publish')
+  }, [capabilityStore, lastSubmittedAttempt, replayAttempt, savedAttempts])
+
+  const confirmPublish = useCallback(async () => {
+    if (!publishAttempt) return
+    const attemptId = publishAttempt.id
+    setPublishAction('publish')
+    setPublishStatus('publishing')
+    setPublishError(undefined)
+    try {
+      const result = await publicReplayClient.publish(createPublicReplayEnvelope(publishAttempt))
+      const url = result.url || publicReplayHref(result.id)
+      const persisted = capabilityStore.save({
+        publicId: result.id,
+        attemptId,
+        url,
+        deleteToken: result.deleteToken,
+        publishedAt: new Date().toISOString(),
+      })
+      setCapabilitiesVersion((value) => value + 1)
+      if (!persisted) {
+        addEvent(copy.capabilityNotSaved, copy.capabilityNotSavedDetail, 'warning', {
+          en: {
+            title: applicationCopy.en.capabilityNotSaved,
+            detail: applicationCopy.en.capabilityNotSavedDetail,
+          },
+          ru: {
+            title: applicationCopy.ru.capabilityNotSaved,
+            detail: applicationCopy.ru.capabilityNotSavedDetail,
+          },
+        })
+      } else {
+        addEvent(copy.replayPublished, copy.publicLinkReady, 'healthy', {
+          en: {
+            title: applicationCopy.en.replayPublished,
+            detail: applicationCopy.en.publicLinkReady,
+          },
+          ru: {
+            title: applicationCopy.ru.replayPublished,
+            detail: applicationCopy.ru.publicLinkReady,
+          },
+        })
+      }
+      if (publishAttemptRef.current?.id !== attemptId) return
+      setPublishUrl(url)
+      setPublishStatus('ready')
+      if (!persisted) {
+        setPublishError(`${copy.capabilityNotSaved}. ${copy.capabilityNotSavedDetail}`)
+      }
+    } catch (caught) {
+      const error = caught as PublicReplayError
+      const message = publishErrorCopy({
+        code: error?.code ?? 'unavailable',
+        message: error?.message ?? copy.publishUnavailable,
+      })
+      if (publishAttemptRef.current?.id !== attemptId) {
+        addEvent(copy.publishFailed, message, 'warning')
+        return
+      }
+      setPublishError(message)
+      setPublishStatus('error')
+      addEvent(copy.publishFailed, message, 'warning')
+    }
+  }, [
+    addEvent,
+    capabilityStore,
+    copy.capabilityNotSaved,
+    copy.capabilityNotSavedDetail,
+    copy.publicLinkReady,
+    copy.publishFailed,
+    copy.publishUnavailable,
+    copy.replayPublished,
+    publishAttempt,
+    publishErrorCopy,
+    publicReplayClient,
+  ])
+
+  const unpublishReplay = useCallback(async () => {
+    if (!publishAttempt) return
+    const existing = capabilityStore.getByAttemptId(publishAttempt.id)
+    if (!existing) return
+    setPublishAction('unpublish')
+    setPublishError(undefined)
+    try {
+      await publicReplayClient.remove(existing.publicId, existing.deleteToken)
+      capabilityStore.remove(existing.publicId)
+      setCapabilitiesVersion((value) => value + 1)
+      setPublishUrl(undefined)
+      setPublishStatus('confirm')
+      setPublishError(undefined)
+      addEvent(copy.replayUnpublished, copy.publicLinkRemoved, 'healthy')
+    } catch (caught) {
+      const error = caught as PublicReplayError
+      const message = publishErrorCopy({
+        code: error?.code ?? 'unavailable',
+        message: error?.message ?? copy.publishUnavailable,
+      })
+      setPublishError(message)
+      setPublishStatus('error')
+    }
+  }, [addEvent, capabilityStore, copy.publicLinkRemoved, copy.publishUnavailable, copy.replayUnpublished, publishAttempt, publishErrorCopy, publicReplayClient])
+
+  const copyPublicLink = useCallback(async () => {
+    if (!publishUrl) return
+    try {
+      await navigator.clipboard.writeText(publishUrl)
+      setPublishCopied(true)
+    } catch {
+      setPublishCopied(false)
+      addEvent(copy.shareUnavailable, copy.clipboardDenied, 'warning')
+    }
+  }, [addEvent, copy.clipboardDenied, copy.shareUnavailable, publishUrl])
 
   const deleteReplay = useCallback((attemptId: string) => {
     try {
@@ -1363,6 +1520,7 @@ export function App() {
               if (attempt) downloadReplay(attempt)
             }}
             onImport={(file) => void importReplay(file)}
+            onPublish={openPublish}
           />
         )}
         {replayAttempt && !historyOpen && (
@@ -1376,6 +1534,8 @@ export function App() {
             activeEventId={activeReplayEvent?.id}
             onSeek={seekReplay}
             onExport={() => downloadReplay(replayAttempt)}
+            onPublish={() => openPublish(replayAttempt.id)}
+            publishedUrl={capabilityStore.getByAttemptId(replayAttempt.id)?.url}
           />
         )}
       </div>
@@ -1390,6 +1550,34 @@ export function App() {
         }}
         report={judgeReport}
         onSubmitDesign={submitDesign}
+        onPublishReplay={lastSubmittedAttempt ? () => openPublish(lastSubmittedAttempt.id) : undefined}
+      />
+      <PublishReplayDialog
+        locale={locale}
+        open={Boolean(publishAttempt)}
+        preview={publishAttempt ? previewPublicReplay(publishAttempt) : null}
+        challengeTitle={publishAttempt
+          ? (publishAttempt.challengeId === 'news-feed'
+            ? scenarioLabels[locale]['news-feed'].title
+            : scenarioLabels[locale]['url-shortener'].title)
+          : scenarioLabels[locale][challengeId].title}
+        status={publishStatus}
+        publicUrl={publishUrl}
+        error={publishError}
+        copied={publishCopied}
+        onClose={() => {
+          setPublishAttempt(null)
+          setPublishStatus('confirm')
+          setPublishCopied(false)
+          setPublishAction('publish')
+        }}
+        onConfirm={() => void confirmPublish()}
+        onRetry={() => {
+          if (nextPublishRetry(publishAction) === 'unpublish') void unpublishReplay()
+          else void confirmPublish()
+        }}
+        onCopy={() => void copyPublicLink()}
+        onUnpublish={publishUrl ? () => void unpublishReplay() : undefined}
       />
       <div className="screen-reader-status" aria-live="polite">
         {replayAttempt

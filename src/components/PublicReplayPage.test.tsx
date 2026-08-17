@@ -1,0 +1,49 @@
+import { renderToStaticMarkup } from 'react-dom/server'
+import { describe, expect, it, vi } from 'vitest'
+import { PublicReplayState, publicReplayStateCopy } from './PublicReplayState'
+
+describe('public replay states', () => {
+  it('renders a Russian not-found page', () => {
+    const html = renderToStaticMarkup(
+      <PublicReplayState
+        locale="ru"
+        status="error"
+        error={{ code: 'not-found', message: 'missing' }}
+        onRetry={vi.fn()}
+      />,
+    )
+    expect(html).toContain('Повтор не найден')
+    expect(html).toContain('уже удалён')
+    expect(html).not.toContain('Replay not found')
+  })
+
+  it('keeps unsupported versions distinct from missing records', () => {
+    const html = renderToStaticMarkup(
+      <PublicReplayState
+        locale="en"
+        status="error"
+        error={{ code: 'unsupported-version', message: 'v9' }}
+        onRetry={vi.fn()}
+      />,
+    )
+    expect(html).toContain('Unsupported version')
+    expect(html).not.toContain('Replay not found')
+  })
+
+  it('keeps a throttled public replay distinct from an outage', () => {
+    const html = renderToStaticMarkup(
+      <PublicReplayState
+        locale="en"
+        status="error"
+        error={{ code: 'rate-limited', message: 'slow down' }}
+        onRetry={vi.fn()}
+      />,
+    )
+    expect(html).toContain('Too many requests')
+    expect(html).not.toContain('Start the local backend')
+    expect(publicReplayStateCopy('en', 'error', { code: 'rate-limited', message: 'slow down' }).detail)
+      .toContain('rate-limited')
+    expect(publicReplayStateCopy('en', 'error', { code: 'rate-limited', message: 'slow down' }).detail)
+      .not.toContain('unavailable')
+  })
+})

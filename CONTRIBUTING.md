@@ -4,18 +4,23 @@ Thanks for helping make system-design practice more concrete, visual, and honest
 
 ## Local setup
 
-Faultline currently targets Node.js 22 or newer and npm.
+Faultline currently targets Node.js 22 or newer, npm, and Go 1.22+ for the local share API.
 
 ```bash
 npm ci
+npm run dev:api
 npm run dev
 ```
+
+The UI still works without the API. Publish replay and public links need both processes.
 
 Before opening a pull request, run:
 
 ```bash
 npm run test:run
 npm run build
+npm run test:api
+go -C backend vet ./...
 ```
 
 ## What makes a good contribution

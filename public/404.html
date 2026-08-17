@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Faultline</title>
+    <script>
+      (function () {
+        var match = location.pathname.match(/\/r\/([A-Za-z0-9_-]+)\/?$/);
+        if (match) {
+          var base = location.pathname.replace(/\/r\/[A-Za-z0-9_-]+\/?$/, '/');
+          location.replace(base + '#/r/' + match[1] + location.search);
+          return;
+        }
+        location.replace('./');
+      })();
+    </script>
+  </head>
+  <body></body>
+</html>
