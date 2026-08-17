@@ -1110,7 +1110,6 @@ export function App() {
     setPublishError(undefined)
     try {
       const result = await publicReplayClient.publish(createPublicReplayEnvelope(publishAttempt))
-      if (publishAttemptRef.current?.id !== attemptId) return
       const url = result.url || publicReplayHref(result.id)
       const persisted = capabilityStore.save({
         publicId: result.id,
@@ -1120,6 +1119,7 @@ export function App() {
         publishedAt: new Date().toISOString(),
       })
       setCapabilitiesVersion((value) => value + 1)
+      if (publishAttemptRef.current?.id !== attemptId) return
       setPublishUrl(url)
       setPublishStatus('ready')
       if (persisted) {
@@ -1147,7 +1147,10 @@ export function App() {
         })
       }
     } catch (caught) {
-      if (publishAttemptRef.current?.id !== attemptId) return
+      if (publishAttemptRef.current?.id !== attemptId) {
+        addEvent(copy.publishFailed, copy.publishUnavailable, 'warning')
+        return
+      }
       const error = caught as PublicReplayError
       const message = publishErrorCopy({
         code: error?.code ?? 'unavailable',

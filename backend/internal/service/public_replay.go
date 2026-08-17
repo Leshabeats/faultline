@@ -53,9 +53,6 @@ func (s *PublicReplayService) Publish(raw []byte) (PublishResult, error) {
 	if err != nil {
 		return PublishResult{}, err
 	}
-	if err := s.ensureQuota(int64(len(canonical))); err != nil {
-		return PublishResult{}, err
-	}
 	id, err := randomToken(18)
 	if err != nil {
 		return PublishResult{}, err
@@ -71,7 +68,10 @@ func (s *PublicReplayService) Publish(raw []byte) (PublishResult, error) {
 		EnvelopeJSON:    canonical,
 		DeleteTokenHash: repository.HashDeleteToken(deleteToken),
 	}
-	if err := s.repo.Insert(record); err != nil {
+	if err := s.repo.InsertWithinQuota(record, s.maxRecords, s.maxBytes); err != nil {
+		if errors.Is(err, repository.ErrStorageQuota) {
+			return PublishResult{}, ErrStorageQuota
+		}
 		return PublishResult{}, err
 	}
 	return PublishResult{
@@ -121,22 +121,6 @@ func IsForbidden(err error) bool {
 	return errors.Is(err, repository.ErrForbidden)
 }
 
-func (s *PublicReplayService) ensureQuota(additionalBytes int64) error {
-	if s.maxRecords <= 0 && s.maxBytes <= 0 {
-		return nil
-	}
-	usage, err := s.repo.Usage()
-	if err != nil {
-		return err
-	}
-	if s.maxRecords > 0 && usage.Records+1 > s.maxRecords {
-		return ErrStorageQuota
-	}
-	if s.maxBytes > 0 && usage.Bytes+additionalBytes > s.maxBytes {
-		return ErrStorageQuota
-	}
-	return nil
-}
 
 func IsQuotaExceeded(err error) bool {
 	return errors.Is(err, ErrStorageQuota)

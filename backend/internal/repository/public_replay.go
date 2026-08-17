@@ -13,7 +13,8 @@ import (
 var (
 	ErrNotFound  = errors.New("public replay not found")
 	ErrConflict  = errors.New("public replay already exists")
-	ErrForbidden = errors.New("delete token does not match")
+	ErrForbidden    = errors.New("delete token does not match")
+	ErrStorageQuota = errors.New("public replay storage quota exceeded")
 )
 
 type PublicReplayRecord struct {
@@ -50,21 +51,51 @@ FROM public_replays
 	return usage, err
 }
 
-func (r *PublicReplayRepository) Insert(record PublicReplayRecord) error {
-	_, err := r.db.Exec(
+func (r *PublicReplayRepository) InsertWithinQuota(record PublicReplayRecord, maxRecords int, maxBytes int64) error {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.Exec(`CREATE TABLE IF NOT EXISTS public_replay_quota_lock (id INTEGER PRIMARY KEY CHECK (id = 1))`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`INSERT OR IGNORE INTO public_replay_quota_lock (id) VALUES (1)`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`UPDATE public_replay_quota_lock SET id = 1 WHERE id = 1`); err != nil {
+		return err
+	}
+	var usage StorageUsage
+	if err := tx.QueryRow(`
+SELECT COUNT(1), COALESCE(SUM(LENGTH(envelope_json)), 0)
+FROM public_replays
+`).Scan(&usage.Records, &usage.Bytes); err != nil {
+		return err
+	}
+	if maxRecords > 0 && usage.Records+1 > maxRecords {
+		return ErrStorageQuota
+	}
+	if maxBytes > 0 && usage.Bytes+int64(len(record.EnvelopeJSON)) > maxBytes {
+		return ErrStorageQuota
+	}
+	if _, err := tx.Exec(
 		`INSERT INTO public_replays (id, created_at, envelope_json, delete_token_hash) VALUES (?, ?, ?, ?)`,
 		record.ID,
 		record.CreatedAt.UTC().Format(time.RFC3339Nano),
 		string(record.EnvelopeJSON),
 		record.DeleteTokenHash,
-	)
-	if err != nil {
+	); err != nil {
 		if strings.Contains(strings.ToUpper(err.Error()), "UNIQUE") {
 			return ErrConflict
 		}
 		return fmt.Errorf("insert public replay: %w", err)
 	}
-	return nil
+	return tx.Commit()
+}
+
+func (r *PublicReplayRepository) Insert(record PublicReplayRecord) error {
+	return r.InsertWithinQuota(record, 0, 0)
 }
 
 func (r *PublicReplayRepository) Get(id string) (PublicReplayRecord, error) {

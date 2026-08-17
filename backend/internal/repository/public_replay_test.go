@@ -54,3 +54,25 @@ func TestPublicReplayRepositoryInsertGetAndDelete(t *testing.T) {
 		t.Fatalf("expected not found, got %v", err)
 	}
 }
+
+func TestInsertWithinQuotaRejectsOverCap(t *testing.T) {
+	repo := NewPublicReplayRepository(testDB(t))
+	record := PublicReplayRecord{
+		ID:              "id-quota-1",
+		CreatedAt:       time.Date(2026, 8, 17, 10, 0, 0, 0, time.UTC),
+		EnvelopeJSON:    []byte(`{"schema":"faultline.public-replay"}`),
+		DeleteTokenHash: HashDeleteToken("secret-token"),
+	}
+	if err := repo.InsertWithinQuota(record, 1, 50_000_000); err != nil {
+		t.Fatal(err)
+	}
+	second := record
+	second.ID = "id-quota-2"
+	if err := repo.InsertWithinQuota(second, 1, 50_000_000); !errors.Is(err, ErrStorageQuota) {
+		t.Fatalf("expected quota error, got %v", err)
+	}
+	if _, err := repo.Get("id-quota-2"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("over-quota insert should not persist, got %v", err)
+	}
+}
+
