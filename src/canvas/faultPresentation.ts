@@ -129,6 +129,7 @@ export function projectFaultEdges({
     const severed = severedEdgeIds.has(edge.id)
     const affected = affectedEdgeIds.has(edge.id)
     const targetHealth = nodeHealthById.get(edge.target) ?? 'healthy'
+    const targetFailed = targetHealth === 'failed'
     const baseLabel = edge.data !== undefined &&
       Object.prototype.hasOwnProperty.call(edge.data, 'baseLabel')
       ? edge.data.baseLabel
@@ -142,7 +143,7 @@ export function projectFaultEdges({
         baseLabel,
         tone: severed ? 'critical' : affected ? 'warning' : toneForHealth(targetHealth),
         intensity,
-        paused: paused || severed,
+        paused: paused || severed || targetFailed,
         faultRole: severed ? 'source' : affected ? 'affected' : undefined,
       },
     }

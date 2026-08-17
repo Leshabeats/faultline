@@ -981,6 +981,14 @@ button:disabled {
   backdrop-filter: blur(10px);
 }
 
+.edge-label.is-branch-label {
+  width: max-content;
+  max-width: 174px;
+  line-height: 1.25;
+  text-align: center;
+  white-space: normal;
+}
+
 /* Component dock */
 
 .component-dock {

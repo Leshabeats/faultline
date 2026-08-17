@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { DEFAULT_CAPACITY_TUNING } from '../capacity/model'
 import type { FaultMode, SimulationMetrics } from '../domain/system'
 import { computeSimulation } from './engine'
 
@@ -195,6 +196,29 @@ describe('computeSimulation', () => {
     expect(redundant.metrics.cacheMiss).toBeLessThan(single.metrics.cacheMiss)
     expect(redundant.metrics.dbCpu).toBeLessThan(single.metrics.dbCpu)
     expect(redundant.metrics.p99).toBeLessThan(single.metrics.p99)
+  })
+
+  it('treats the loss of the last targeted cache replica as a complete bypass', () => {
+    const snapshot = computeSimulation({
+      loadMultiplier: 3,
+      fault: 'component-outage',
+      tick: 7,
+      capacity: DEFAULT_CAPACITY_TUNING,
+      componentCounts: { client: 1, gateway: 1, service: 1, database: 1 },
+      criticalPathConnected: true,
+      faultImpact: {
+        targetType: 'node',
+        componentKind: 'cache',
+        remainingReplicas: 0,
+        routeDisconnected: false,
+      },
+    })
+
+    expect(snapshot.metrics.cacheMiss).toBe(100)
+    expect(snapshot.capacity?.workload.effectiveCacheHitRate).toBe(0)
+    expect(snapshot.capacity?.workload.databaseReadRps).toBe(30_000)
+    expect(snapshot.nodeHealth.cache).toBe('failed')
+    expect(snapshot.nodeDetails.cache).toBe('Unavailable')
   })
 
   it('fails requests without claiming reachable components are physically down', () => {

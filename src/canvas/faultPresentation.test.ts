@@ -8,12 +8,11 @@ import { projectFaultEdges, projectFaultNodes } from './faultPresentation'
 
 describe('fault canvas presentation', () => {
   it('shows route isolation without presenting healthy components as offline', () => {
-    const cacheOnlyEdges = seedEdges.filter((edge) => edge.id !== 'api-database')
-    const baseTopology = analyzeTopology(seedNodes, cacheOnlyEdges)
+    const baseTopology = analyzeTopology(seedNodes, seedEdges)
     const impact = analyzeTargetedFault(
       seedNodes,
-      cacheOnlyEdges,
-      { type: 'node', id: 'cache' },
+      seedEdges,
+      { type: 'node', id: 'api' },
     )
     const simulation = computeSimulation({
       loadMultiplier: 1,
@@ -36,21 +35,32 @@ describe('fault canvas presentation', () => {
       load: 1,
     })
 
-    expect(nodes.find(({ id }) => id === 'cache')?.data).toMatchObject({
+    expect(nodes.find(({ id }) => id === 'api')?.data).toMatchObject({
       health: 'failed',
       detail: 'Instance offline',
       faultRole: 'source',
-    })
-    expect(nodes.find(({ id }) => id === 'api')?.data).toMatchObject({
-      health: 'healthy',
-      detail: 'No route',
-      faultRole: 'isolated',
     })
     expect(nodes.find(({ id }) => id === 'database')?.data).toMatchObject({
       health: 'healthy',
       detail: 'No route',
       faultRole: 'isolated',
     })
+  })
+
+  it('pauses traffic entering a failed component', () => {
+    const impact = analyzeTargetedFault(seedNodes, seedEdges, { type: 'node', id: 'cache' })
+    const edges = projectFaultEdges({
+      edges: seedEdges,
+      nodeHealthById: new Map([['cache', 'failed']]),
+      impact,
+      intensity: 1,
+      paused: false,
+    })
+
+    expect(edges.find(({ id }) => id === 'api-cache')?.data)
+      .toMatchObject({ tone: 'critical', paused: true })
+    expect(edges.find(({ id }) => id === 'api-database')?.data)
+      .toMatchObject({ tone: 'warning', paused: false })
   })
 
   it('restores the canonical edge label after a temporary partition label', () => {

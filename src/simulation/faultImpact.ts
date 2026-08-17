@@ -82,6 +82,40 @@ const tracePathFrom = <Node extends TopologyNode, Edge extends FaultEdge>(
   return fallback
 }
 
+const cacheFallbackFrom = <Node extends TopologyNode, Edge extends FaultEdge>(
+  cacheId: string,
+  nodes: readonly Node[],
+  edges: readonly Edge[],
+) => {
+  const upstreamIds = new Set(
+    edges.filter((edge) => edge.target === cacheId).map((edge) => edge.source),
+  )
+  const databaseIds = new Set(
+    nodes.filter((node) => node.data.kind === 'database').map((node) => node.id),
+  )
+  const fallbackEdges = edges.filter(
+    (edge) => upstreamIds.has(edge.source) && databaseIds.has(edge.target),
+  )
+  const downstream = fallbackEdges.flatMap((edge) => {
+    const next = downstreamFrom(edge.target, edges)
+    return [
+      { nodeId: edge.source, edgeId: edge.id },
+      { nodeId: edge.target, edgeId: edge.id },
+      ...next.nodeIds.map((nodeId) => ({ nodeId, edgeId: '' })),
+      ...next.edgeIds.map((edgeId) => ({ nodeId: '', edgeId })),
+    ]
+  })
+  const trace = fallbackEdges[0]
+    ? [cacheId, fallbackEdges[0].source, fallbackEdges[0].target]
+    : [cacheId]
+
+  return {
+    nodeIds: [...new Set(downstream.map(({ nodeId }) => nodeId).filter(Boolean))],
+    edgeIds: [...new Set(downstream.map(({ edgeId }) => edgeId).filter(Boolean))],
+    trace,
+  }
+}
+
 export function analyzeTargetedFault<
   Node extends TopologyNode,
   Edge extends FaultEdge,
@@ -148,6 +182,9 @@ export function analyzeTargetedFault<
     : [...edges]
   const effectiveTopology = analyzeTopology(effectiveNodes, effectiveEdges)
   const downstream = downstreamFrom(node.id, edges)
+  const cacheFallback = node.data.kind === 'cache'
+    ? cacheFallbackFrom(node.id, nodes, edges)
+    : { nodeIds: [], edgeIds: [], trace: [] }
   const isolatedNodeIds = base.routedNodeIds.filter(
     (id) => !effectiveTopology.routedNodeIds.includes(id) && id !== node.id,
   )
@@ -158,9 +195,11 @@ export function analyzeTargetedFault<
     failedNodeIds: failed ? [node.id] : [],
     degradedNodeIds: failed ? [] : [node.id],
     isolatedNodeIds,
-    affectedNodeIds: downstream.nodeIds,
-    affectedEdgeIds: downstream.edgeIds,
-    traceNodeIds: tracePathFrom(node.id, nodes, edges),
+    affectedNodeIds: [...new Set([...downstream.nodeIds, ...cacheFallback.nodeIds])],
+    affectedEdgeIds: [...new Set([...downstream.edgeIds, ...cacheFallback.edgeIds])],
+    traceNodeIds: cacheFallback.trace.length > 1
+      ? cacheFallback.trace
+      : tracePathFrom(node.id, nodes, edges),
     lostReplicas: 1,
     summary: {
       targetType: 'node',

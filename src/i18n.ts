@@ -52,6 +52,10 @@ export const UI_COPY = {
     noFault: 'No fault',
     selected: 'Selected component',
     requests: 'requests/s',
+    requestRateShort: 'req/s',
+    cacheUnavailable: 'Unavailable',
+    cacheMissPath: 'miss path',
+    databaseFallback: 'fallback',
   },
   ru: {
     load: 'Нагрузка',
@@ -103,6 +107,10 @@ export const UI_COPY = {
     noFault: 'Без сбоя',
     selected: 'Выбранный компонент',
     requests: 'запросов/с',
+    requestRateShort: 'запр/с',
+    cacheUnavailable: 'Недоступен',
+    cacheMissPath: 'промахи кеша',
+    databaseFallback: 'резервный путь',
   },
 } as const
 

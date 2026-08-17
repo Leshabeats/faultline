@@ -53,7 +53,6 @@ describe('targeted fault impact', () => {
     const edges = [
       edge('client-api', 'client', 'api'),
       edge('api-cache', 'api', 'cache'),
-      edge('cache-db', 'cache', 'db'),
       edge('api-db', 'api', 'db'),
     ]
 
@@ -68,26 +67,9 @@ describe('targeted fault impact', () => {
       remainingReplicas: 0,
       routeDisconnected: false,
     })
-  })
-
-  it('disconnects a cache-only architecture when no database fallback exists', () => {
-    const nodes = [
-      node('client', 'client'),
-      node('api', 'service'),
-      node('cache', 'cache'),
-      node('db', 'database'),
-    ]
-    const edges = [
-      edge('client-api', 'client', 'api'),
-      edge('api-cache', 'api', 'cache'),
-      edge('cache-db', 'cache', 'db'),
-    ]
-
-    const impact = analyzeTargetedFault(nodes, edges, { type: 'node', id: 'cache' })
-
-    expect(impact.topology.criticalPathConnected).toBe(false)
-    expect(impact.summary?.routeDisconnected).toBe(true)
-    expect(impact.isolatedNodeIds).toEqual(expect.arrayContaining(['client', 'api', 'db']))
+    expect(impact.affectedNodeIds).toEqual(['api', 'db'])
+    expect(impact.affectedEdgeIds).toEqual(['api-db'])
+    expect(impact.traceNodeIds).toEqual(['cache', 'api', 'db'])
   })
 
   it('partitions one edge while preserving an alternate route', () => {

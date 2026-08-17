@@ -1,5 +1,9 @@
 import type { SystemFlowEdge, SystemFlowNode } from '../canvas/types'
 import { projectFaultEdges, projectFaultNodes } from '../canvas/faultPresentation'
+import {
+  projectCacheAsideTraffic,
+  summarizeCacheHealth,
+} from '../canvas/cacheAsidePresentation'
 import type { FaultMode, FaultTarget, Locale, ScenarioId } from '../domain/system'
 import { componentLabels, faultLabels } from '../i18n'
 import { normalizeNodeTopology } from '../domain/topology'
@@ -101,6 +105,7 @@ export const presentReplayFrame = (
   tick: number,
   paused: boolean,
   scenario: ScenarioId = 'url-shortener',
+  locale: Locale = 'en',
 ) => {
   const baseNodes = frame.architecture.nodes.map((node) => fromReplayNode(node, frame.load))
   const baseEdges = frame.architecture.edges.map((edge) => fromReplayEdge(edge, frame.load, paused))
@@ -135,7 +140,7 @@ export const presentReplayFrame = (
     load: frame.load,
   })
   const healthByNode = new Map(nodes.map((node) => [node.id, node.data.health]))
-  const edges = projectFaultEdges({
+  const projectedEdges = projectFaultEdges({
     edges: baseEdges,
     nodeHealthById: healthByNode,
     impact: targetedImpact,
@@ -156,15 +161,18 @@ export const presentReplayFrame = (
       if (edge.id === 'clients-edge') {
         return `${formatMetric(simulation.metrics.throughput, 'throughput')} req/s`
       }
-      if (edge.id === 'api-cache') {
-        return `${Math.round(simulation.metrics.cacheMiss)}% miss`
-      }
-      if (edge.id === 'cache-database') {
-        return formatMetric(simulation.metrics.p99, 'p99')
-      }
       return edge.label
     },
   })
+  const cacheHealth = summarizeCacheHealth(nodes)
+  const edges = scenario === 'url-shortener'
+    ? projectCacheAsideTraffic({
+        edges: projectedEdges,
+        snapshot: simulation,
+        cacheHealth,
+        locale,
+      })
+    : projectedEdges
   return { nodes, edges, faultImpact: targetedImpact }
 }
 

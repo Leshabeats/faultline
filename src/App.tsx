@@ -2,6 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ArchitectureCanvas } from './canvas/ArchitectureCanvas'
 import type { SystemFlowEdge, SystemFlowNode } from './canvas/types'
 import { projectFaultEdges, projectFaultNodes } from './canvas/faultPresentation'
+import {
+  projectCacheAsideTraffic,
+  summarizeCacheHealth,
+} from './canvas/cacheAsidePresentation'
 import { InterviewerPanel } from './components/InterviewerPanel'
 import {
   BottleneckPanel,
@@ -442,7 +446,13 @@ export function App() {
     if (!replayFrame) return
     const replayTick = Math.floor(replayCursorMs / 900)
     const replayScenario = replayAttempt?.challengeId === 'news-feed' ? 'news-feed' : 'url-shortener'
-    const presentation = presentReplayFrame(replayFrame, replayTick, !replayPlaying, replayScenario)
+    const presentation = presentReplayFrame(
+      replayFrame,
+      replayTick,
+      !replayPlaying,
+      replayScenario,
+      locale,
+    )
     setChallengeId(replayScenario)
     setLoad(replayFrame.load)
     setFault(replayFrame.fault)
@@ -454,7 +464,7 @@ export function App() {
     setTick(replayTick)
     setNodes(presentation.nodes)
     setEdges(presentation.edges)
-  }, [replayAttempt?.challengeId, replayCursorMs, replayFrame, replayPlaying])
+  }, [locale, replayAttempt?.challengeId, replayCursorMs, replayFrame, replayPlaying])
 
   useEffect(() => {
     if (replayAttempt) return
@@ -500,8 +510,9 @@ export function App() {
 
   useEffect(() => {
     const healthByNode = new Map(nodes.map((node) => [node.id, node.data.health]))
-    setEdges((current) =>
-      projectFaultEdges({
+    const cacheHealth = summarizeCacheHealth(nodes)
+    setEdges((current) => {
+      const projected = projectFaultEdges({
         edges: current,
         nodeHealthById: healthByNode,
         impact: targetedFaultImpact,
@@ -531,16 +542,18 @@ export function App() {
           if (edge.id === 'clients-edge') {
             return `${formatMetric(snapshot.metrics.throughput, 'throughput')} req/s`
           }
-          if (edge.id === 'api-cache') {
-            return `${Math.round(snapshot.metrics.cacheMiss)}% miss`
-          }
-          if (edge.id === 'cache-database') {
-            return formatMetric(snapshot.metrics.p99, 'p99')
-          }
           return edge.label
         },
-      }),
-    )
+      })
+      return challengeId === 'url-shortener'
+        ? projectCacheAsideTraffic({
+            edges: projected,
+            snapshot,
+            cacheHealth,
+            locale,
+          })
+        : projected
+    })
   }, [capacity, challengeId, effectiveLoad, fault, locale, nodes, playing, replayAttempt, replayPlaying, snapshot.metrics, targetedFaultImpact])
 
   const {

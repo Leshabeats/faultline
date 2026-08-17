@@ -24,10 +24,14 @@ describe('replay presentation', () => {
     const frame = playReplayAt(attempt, 0)
     const presentation = presentReplayFrame(frame, 0, true)
     const redis = presentation.nodes.find((node) => node.id === 'cache')
-    const databaseEdge = presentation.edges.find((edge) => edge.id === 'cache-database')
+    const cacheEdge = presentation.edges.find((edge) => edge.id === 'api-cache')
+    const databaseEdge = presentation.edges.find((edge) => edge.id === 'api-database')
 
     expect(redis?.data).toMatchObject({ health: 'failed', detail: 'Unavailable', load: 1 })
-    expect(databaseEdge?.data).toMatchObject({ tone: 'warning', intensity: 1, paused: true })
+    expect(cacheEdge).toMatchObject({ label: 'Unavailable' })
+    expect(cacheEdge?.data).toMatchObject({ tone: 'critical', intensity: 1, paused: true, flowRatio: 0 })
+    expect(databaseEdge?.label).toContain('fallback')
+    expect(databaseEdge?.data).toMatchObject({ tone: 'warning', intensity: 1, paused: true, flowRatio: 1 })
     expect(attempt.initial.architecture.nodes[0].data).toEqual({
       kind: 'client',
       label: 'Clients',
@@ -115,6 +119,11 @@ describe('replay presentation', () => {
       .toMatchObject({ health: 'healthy' })
     expect(presentation.nodes.filter((node) => node.data.faultRole === 'isolated'))
       .toHaveLength(0)
+    expect(presentation.edges.some(({ id }) => id === 'cache-database')).toBe(false)
+    expect(presentation.edges.find(({ id }) => id === 'api-cache'))
+      .toMatchObject({ label: 'Unavailable', data: { paused: true, flowRatio: 0 } })
+    expect(presentation.edges.find(({ id }) => id === 'api-database'))
+      .toMatchObject({ data: { tone: 'warning', flowRatio: 1 } })
   })
 
   it('sorts imported timeline events independently from their JSON order', () => {

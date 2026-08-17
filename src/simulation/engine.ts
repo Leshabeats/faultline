@@ -101,6 +101,17 @@ const applyTargetedFaultImpact = (
 
 function computeUrlShortenerSimulation(input: SimulationInput): SimulationSnapshot {
   const { loadMultiplier: load, fault, tick } = input
+  const cacheReplicaCount = Math.max(
+    1,
+    input.replicaCounts?.cache ?? input.componentCounts?.cache ?? 1,
+  )
+  const targetedCacheUnavailable = input.faultImpact?.targetType === 'node' &&
+    input.faultImpact.componentKind === 'cache' &&
+    input.faultImpact.remainingReplicas === 0 &&
+    (input.componentCounts === undefined || (input.componentCounts.cache ?? 0) === 0)
+  const scenarioCacheUnavailable = fault === 'cache-outage' && cacheReplicaCount === 1
+  const cacheUnavailable = targetedCacheUnavailable || scenarioCacheUnavailable
+  const capacityFault = cacheUnavailable ? 'cache-outage' : fault
   const baseline = baseMetrics(load)
   let metrics: SimulationMetrics = { ...baseline }
   const nodeHealth: Partial<Record<ComponentKind, ComponentHealth>> = {
@@ -208,7 +219,7 @@ function computeUrlShortenerSimulation(input: SimulationInput): SimulationSnapsh
 
   const capacity = estimateCapacity({
     loadMultiplier: load,
-    fault,
+    fault: capacityFault,
     tuning: input.capacity ?? DEFAULT_CAPACITY_TUNING,
     componentCounts: input.componentCounts,
     replicaCounts: input.replicaCounts,
@@ -223,12 +234,8 @@ function computeUrlShortenerSimulation(input: SimulationInput): SimulationSnapsh
         ? 'degraded'
         : 'healthy'
     nodeHealth.queue = metrics.queueDepth >= 2_000 ? 'backlog' : 'healthy'
-    if (fault === 'cache-outage') {
-      const cacheReplicas = Math.max(
-        1,
-        input.replicaCounts?.cache ?? input.componentCounts?.cache ?? 1,
-      )
-      nodeHealth.cache = cacheReplicas > 1 ? 'degraded' : 'failed'
+    if (capacityFault === 'cache-outage') {
+      nodeHealth.cache = cacheReplicaCount > 1 ? 'degraded' : 'failed'
     } else {
       nodeHealth.cache = capacity.utilization.cache >= 1 ? 'hot' : 'healthy'
     }
@@ -242,7 +249,9 @@ function computeUrlShortenerSimulation(input: SimulationInput): SimulationSnapsh
     metrics.queueDepth = Math.max(metrics.queueDepth, 1_200 * load)
   }
 
-  metrics = applyTargetedFaultImpact(metrics, input)
+  metrics = targetedCacheUnavailable && input.capacity
+    ? metrics
+    : applyTargetedFaultImpact(metrics, input)
 
   metrics = withMotion(
     {
@@ -255,6 +264,11 @@ function computeUrlShortenerSimulation(input: SimulationInput): SimulationSnapsh
     },
     tick,
   )
+
+  // A fully unavailable cache cannot produce an animated 99.x% "miss" value.
+  // Every lookup is bypassed to the source of truth until Redis recovers.
+  if (cacheUnavailable) metrics.cacheMiss = 100
+  if (cacheUnavailable) nodeHealth.cache = 'failed'
 
   if (nodeHealth.database === 'hot' && metrics.dbCpu < 80) {
     nodeHealth.database = fault === 'none' ? 'healthy' : 'degraded'
