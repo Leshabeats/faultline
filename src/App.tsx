@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ArchitectureCanvas } from './canvas/ArchitectureCanvas'
 import type { SystemFlowEdge, SystemFlowNode } from './canvas/types'
+import { projectFaultEdges, projectFaultNodes } from './canvas/faultPresentation'
+import {
+  projectCacheAsideTraffic,
+  summarizeCacheHealth,
+} from './canvas/cacheAsidePresentation'
 import { InterviewerPanel } from './components/InterviewerPanel'
 import {
   BottleneckPanel,
@@ -19,10 +24,10 @@ import {
   getChallengePack,
 } from './challenges/registry'
 import {
-  type ComponentHealth,
   type ComponentKind,
   type CapacityTuning,
   type FaultMode,
+  type FaultTarget,
   type Locale,
   type LoadMultiplier,
   type ScenarioId,
@@ -55,10 +60,12 @@ import type { InterviewContext } from './interview/types'
 import { interviewRouter } from './interview/router'
 import { judgeNewsFeed, judgeUrlShortener, type JudgeReport } from './judge'
 import { computeSimulation, formatMetric } from './simulation/engine'
+import { analyzeTargetedFault } from './simulation/faultImpact'
 import { analyzeTopology } from './simulation/topology'
 import {
   ReplayAttemptRepository,
   createReplayAttempt,
+  createReplayFaultChangedPayload,
   parseReplayEnvelope,
   playReplayAt,
   recordReplayEvent,
@@ -77,14 +84,8 @@ import {
   toReplayInitial,
 } from './replay/presentation'
 import { verifyImportedAttempt } from './replay/verification'
-import { faultLabels as localizedFaultLabels, initialLocale, localizeChallengeDefinition, localizeNodeDetail, localizeNodeLabel, scenarioLabels } from './i18n'
+import { UI_COPY, faultLabels as localizedFaultLabels, initialLocale, localizeChallengeDefinition, localizeNodeDetail, localizeNodeLabel, scenarioLabels } from './i18n'
 import { useTrafficRamp } from './simulation/useTrafficRamp'
-
-const toneForHealth = (health: ComponentHealth) => {
-  if (health === 'failed' || health === 'hot') return 'critical' as const
-  if (health === 'degraded' || health === 'backlog') return 'warning' as const
-  return 'healthy' as const
-}
 
 const formatClock = (elapsedSeconds: number) => {
   const minutes = Math.floor(elapsedSeconds / 60)
@@ -130,8 +131,10 @@ export function App() {
   const [edges, setEdges] = useState<SystemFlowEdge[]>(() => clonePackEdges(getChallengePack('url-shortener')))
   const [activeKind, setActiveKind] = useState<ComponentKind>('cache')
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>('api')
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null)
   const [load, setLoad] = useState<LoadMultiplier>(1)
   const [fault, setFault] = useState<FaultMode>('none')
+  const [faultTarget, setFaultTarget] = useState<FaultTarget | null>(null)
   const [playing, setPlaying] = useState(true)
   const simulatedLoad = useTrafficRamp(load, playing)
   const [tick, setTick] = useState(0)
@@ -169,19 +172,21 @@ export function App() {
   const effectiveLoad = replayAttempt ? load : simulatedLoad
   const draftAttemptRef = useRef<ReplayAttemptV1 | null>(null)
   const recordingElapsedMsRef = useRef(0)
-  const canonicalStateRef = useRef({ nodes, edges, load, fault, capacity, challengeId })
+  const canonicalStateRef = useRef({ nodes, edges, load, fault, faultTarget, capacity, challengeId })
   const liveStateBeforeReplayRef = useRef<{
     nodes: SystemFlowNode[]
     edges: SystemFlowEdge[]
     load: 1 | 3 | 10
     fault: FaultMode
+    faultTarget: FaultTarget | null
     capacity: CapacityTuning
     challengeId: ScenarioId
     playing: boolean
   } | null>(null)
 
-  canonicalStateRef.current = { nodes, edges, load, fault, capacity, challengeId }
+  canonicalStateRef.current = { nodes, edges, load, fault, faultTarget, capacity, challengeId }
   const selectedNode = nodes.find((node) => node.id === selectedNodeId) ?? null
+  const selectedEdge = edges.find((edge) => edge.id === selectedEdgeId) ?? null
   const localizedChallengeOptions = useMemo(
     () => challengeOptions.map((option) => ({
       ...option,
@@ -210,6 +215,26 @@ export function App() {
     () => analyzeTopology(nodes, edges),
     [graphTopology],
   )
+  const targetedFaultImpact = useMemo(
+    () => analyzeTargetedFault(
+      nodes,
+      edges,
+      fault === 'none' ? null : faultTarget,
+    ),
+    [fault, faultTarget, graphTopology],
+  )
+  const simulationTopology = targetedFaultImpact.topology
+
+  useEffect(() => {
+    if (!faultTarget) return
+    const targetStillExists = faultTarget.type === 'node'
+      ? nodes.some((node) => node.id === faultTarget.id)
+      : edges.some((edge) => edge.id === faultTarget.id)
+    if (!targetStillExists) {
+      setFault('none')
+      setFaultTarget(null)
+    }
+  }, [faultTarget, graphTopology])
 
   const snapshot = useMemo(
     () =>
@@ -220,12 +245,13 @@ export function App() {
         tick,
         nodeCount: nodes.length,
         edgeCount: edges.length,
-        componentCounts,
-        replicaCounts,
-        criticalPathConnected,
+        componentCounts: simulationTopology.componentCounts,
+        replicaCounts: simulationTopology.replicaCounts,
+        criticalPathConnected: simulationTopology.criticalPathConnected,
+        faultImpact: targetedFaultImpact.summary,
         capacity,
       }),
-    [capacity, challengeId, componentCounts, criticalPathConnected, edges.length, effectiveLoad, fault, nodes.length, replicaCounts, tick],
+    [capacity, challengeId, edges.length, effectiveLoad, fault, nodes.length, simulationTopology, targetedFaultImpact.summary, tick],
   )
 
   const capacityReport = useMemo(
@@ -233,11 +259,11 @@ export function App() {
       loadMultiplier: effectiveLoad,
       fault,
       tuning: capacity,
-      componentCounts,
-      replicaCounts,
-      criticalPathConnected,
+      componentCounts: simulationTopology.componentCounts,
+      replicaCounts: simulationTopology.replicaCounts,
+      criticalPathConnected: simulationTopology.criticalPathConnected,
     }),
-    [capacity, componentCounts, criticalPathConnected, effectiveLoad, fault, replicaCounts],
+    [capacity, effectiveLoad, fault, simulationTopology],
   )
   const baselineCapacityReport = useMemo(
     () => estimateCapacity({
@@ -248,18 +274,16 @@ export function App() {
         pricingPackId: capacity.pricingPackId,
         benchmarkPackId: capacity.benchmarkPackId,
       },
-      componentCounts,
-      replicaCounts,
-      criticalPathConnected,
+      componentCounts: simulationTopology.componentCounts,
+      replicaCounts: simulationTopology.replicaCounts,
+      criticalPathConnected: simulationTopology.criticalPathConnected,
     }),
     [
       capacity.benchmarkPackId,
       capacity.pricingPackId,
-      componentCounts,
-      criticalPathConnected,
+      simulationTopology,
       fault,
       effectiveLoad,
-      replicaCounts,
     ],
   )
 
@@ -268,20 +292,20 @@ export function App() {
       loadMultiplier: effectiveLoad,
       fault,
       tuning: capacity,
-      componentCounts,
-      criticalPathConnected,
+      componentCounts: simulationTopology.componentCounts,
+      criticalPathConnected: simulationTopology.criticalPathConnected,
     }),
-    [capacity, componentCounts, criticalPathConnected, effectiveLoad, fault],
+    [capacity, effectiveLoad, fault, simulationTopology],
   )
   const baselineNewsFeedReport = useMemo(
     () => estimateNewsFeed({
       loadMultiplier: effectiveLoad,
       fault,
       tuning: DEFAULT_NEWS_FEED_TUNING,
-      componentCounts,
-      criticalPathConnected,
+      componentCounts: simulationTopology.componentCounts,
+      criticalPathConnected: simulationTopology.criticalPathConnected,
     }),
-    [componentCounts, criticalPathConnected, effectiveLoad, fault],
+    [effectiveLoad, fault, simulationTopology],
   )
 
   const replayFrame = useMemo(
@@ -365,6 +389,7 @@ export function App() {
           canonical.load,
           canonical.fault,
           canonical.capacity,
+          canonical.faultTarget,
         ),
       })
       recordingElapsedMsRef.current = 0
@@ -421,10 +446,17 @@ export function App() {
     if (!replayFrame) return
     const replayTick = Math.floor(replayCursorMs / 900)
     const replayScenario = replayAttempt?.challengeId === 'news-feed' ? 'news-feed' : 'url-shortener'
-    const presentation = presentReplayFrame(replayFrame, replayTick, !replayPlaying, replayScenario)
+    const presentation = presentReplayFrame(
+      replayFrame,
+      replayTick,
+      !replayPlaying,
+      replayScenario,
+      locale,
+    )
     setChallengeId(replayScenario)
     setLoad(replayFrame.load)
     setFault(replayFrame.fault)
+    setFaultTarget(replayFrame.faultTarget ?? null)
     setCapacity({
       ...DEFAULT_CAPACITY_TUNING,
       ...(replayFrame.capacity ?? {}),
@@ -432,7 +464,7 @@ export function App() {
     setTick(replayTick)
     setNodes(presentation.nodes)
     setEdges(presentation.edges)
-  }, [replayAttempt?.challengeId, replayCursorMs, replayFrame, replayPlaying])
+  }, [locale, replayAttempt?.challengeId, replayCursorMs, replayFrame, replayPlaying])
 
   useEffect(() => {
     if (replayAttempt) return
@@ -444,50 +476,28 @@ export function App() {
 
   useEffect(() => {
     setNodes((current) => {
-      const routedNodeIdSet = new Set(routedNodeIds)
-      const routedCaches = current.filter(
-        (node) => node.data.kind === 'cache' && routedNodeIdSet.has(node.id),
-      )
-      const faultedCacheId = routedCaches[0]?.id
-
-      return current.map((node) => {
-        let health = snapshot.nodeHealth[node.data.kind] ?? 'healthy'
-        let detail = snapshot.nodeDetails[node.data.kind] ?? 'Healthy'
-
-        if (
-          criticalPathConnected &&
-          !routedNodeIdSet.has(node.id) &&
-          node.data.kind !== 'queue' &&
-          node.data.kind !== 'region'
-        ) {
-          health = 'healthy'
-          detail = 'Not on active path'
-        } else if (
-          fault === 'cache-outage' &&
-          node.data.kind === 'cache' &&
-          (replicaCounts.cache ?? routedCaches.length) > 1
-        ) {
-          const separateFailedNode = routedCaches.length > 1 && node.id === faultedCacheId
-          health = separateFailedNode ? 'failed' : 'degraded'
-          detail = separateFailedNode ? 'Unavailable' : detail
-        }
-
-        return {
-          ...node,
-          data: {
-            ...node.data,
-            label: localizeNodeLabel(locale, challengeId, node.id, node.data.label),
-            health,
-            detail: localizeNodeDetail(locale, detail),
-            load: effectiveLoad,
-          },
-        }
+      return projectFaultNodes({
+        nodes: current,
+        fault,
+        impact: targetedFaultImpact,
+        routedNodeIds,
+        criticalPathConnected,
+        replicaCounts,
+        nodeHealth: snapshot.nodeHealth,
+        nodeDetails: snapshot.nodeDetails,
+        load: effectiveLoad,
+        resolveLabel: (node) => localizeNodeLabel(
+          locale,
+          challengeId,
+          node.id,
+          node.data.label,
+        ),
+        resolveDetail: (detail) => localizeNodeDetail(locale, detail),
       })
     })
   }, [
     criticalPathConnected,
     challengeId,
-    componentCounts.cache,
     fault,
     locale,
     effectiveLoad,
@@ -495,46 +505,56 @@ export function App() {
     routedNodeIds,
     snapshot.nodeDetails,
     snapshot.nodeHealth,
+    targetedFaultImpact,
   ])
 
   useEffect(() => {
     const healthByNode = new Map(nodes.map((node) => [node.id, node.data.health]))
-    setEdges((current) =>
-      current.map((edge) => {
-        const targetHealth = healthByNode.get(edge.target) ?? 'healthy'
-        let label = edge.label
-        if (challengeId === 'news-feed' && edge.id === 'feed-users-api') {
-          label = `${formatMetric(snapshot.metrics.throughput, 'throughput')} deliveries/s`
-        } else if (challengeId === 'news-feed' && edge.id === 'feed-api-store') {
-          label = `${Math.round(effectiveLoad * 2)}k posts/s`
-        } else if (challengeId === 'news-feed' && edge.id === 'feed-api-queue') {
-          label = fault === 'celebrity-spike'
-            ? '50M fan-out'
-            : `${formatMetric(snapshot.metrics.queueDepth, 'queueDepth')} queued`
-        } else if (challengeId === 'news-feed' && edge.id === 'feed-queue-workers') {
-          label = formatMetric(snapshot.metrics.p99, 'p99')
-        } else if (challengeId === 'news-feed' && edge.id === 'feed-workers-cache') {
-          label = normalizeNewsFeedTuning(capacity).strategy
-        } else if (edge.id === 'clients-edge') {
-          label = `${formatMetric(snapshot.metrics.throughput, 'throughput')} req/s`
-        } else if (edge.id === 'api-cache') {
-          label = `${Math.round(snapshot.metrics.cacheMiss)}% miss`
-        } else if (edge.id === 'cache-database') {
-          label = formatMetric(snapshot.metrics.p99, 'p99')
-        }
-
-        return {
-          ...edge,
-          label,
-          data: {
-            tone: toneForHealth(targetHealth),
-            intensity: challengeId === 'news-feed' && fault === 'celebrity-spike' ? 10 : effectiveLoad,
-            paused: replayAttempt ? !replayPlaying : !playing,
-          },
-        }
-      }),
-    )
-  }, [capacity, challengeId, effectiveLoad, fault, nodes, playing, replayAttempt, replayPlaying, snapshot.metrics])
+    const cacheHealth = summarizeCacheHealth(nodes)
+    setEdges((current) => {
+      const projected = projectFaultEdges({
+        edges: current,
+        nodeHealthById: healthByNode,
+        impact: targetedFaultImpact,
+        intensity: challengeId === 'news-feed' && fault === 'celebrity-spike' ? 10 : effectiveLoad,
+        paused: replayAttempt ? !replayPlaying : !playing,
+        resolveLabel: (edge) => {
+          if (targetedFaultImpact.severedEdgeIds.includes(edge.id)) {
+            return UI_COPY[locale].connectionPartitioned
+          }
+          if (challengeId === 'news-feed' && edge.id === 'feed-users-api') {
+            return `${formatMetric(snapshot.metrics.throughput, 'throughput')} deliveries/s`
+          }
+          if (challengeId === 'news-feed' && edge.id === 'feed-api-store') {
+            return `${Math.round(effectiveLoad * 2)}k posts/s`
+          }
+          if (challengeId === 'news-feed' && edge.id === 'feed-api-queue') {
+            return fault === 'celebrity-spike'
+              ? '50M fan-out'
+              : `${formatMetric(snapshot.metrics.queueDepth, 'queueDepth')} queued`
+          }
+          if (challengeId === 'news-feed' && edge.id === 'feed-queue-workers') {
+            return formatMetric(snapshot.metrics.p99, 'p99')
+          }
+          if (challengeId === 'news-feed' && edge.id === 'feed-workers-cache') {
+            return normalizeNewsFeedTuning(capacity).strategy
+          }
+          if (edge.id === 'clients-edge') {
+            return `${formatMetric(snapshot.metrics.throughput, 'throughput')} req/s`
+          }
+          return edge.label
+        },
+      })
+      return challengeId === 'url-shortener'
+        ? projectCacheAsideTraffic({
+            edges: projected,
+            snapshot,
+            cacheHealth,
+            locale,
+          })
+        : projected
+    })
+  }, [capacity, challengeId, effectiveLoad, fault, locale, nodes, playing, replayAttempt, replayPlaying, snapshot.metrics, targetedFaultImpact])
 
   const {
     onNodesChange,
@@ -581,12 +601,19 @@ export function App() {
   )
 
   const changeFault = useCallback(
-    (nextFault: FaultMode) => {
+    (nextFault: FaultMode, target?: FaultTarget) => {
+      const nextTarget = nextFault === 'none' ? null : target ?? null
       setFault(nextFault)
+      setFaultTarget(nextTarget)
+      const impact = analyzeTargetedFault(
+        canonicalStateRef.current.nodes,
+        canonicalStateRef.current.edges,
+        nextTarget,
+      )
       const tone: TimelineEvent['tone'] =
         nextFault === 'none'
           ? 'healthy'
-          : nextFault === 'cache-outage' || nextFault === 'celebrity-spike'
+          : nextFault === 'cache-outage' || nextFault === 'celebrity-spike' || impact.summary?.routeDisconnected
             ? 'critical'
             : 'warning'
       addEvent(
@@ -601,7 +628,7 @@ export function App() {
       recordAction({
         type: 'fault.changed',
         source: 'user',
-        payload: { fault: nextFault },
+        payload: createReplayFaultChangedPayload(nextFault, nextTarget),
         timeline: {
           title: nextFault === 'none'
             ? locale === 'ru' ? 'Сбой снят' : 'Fault cleared'
@@ -668,8 +695,10 @@ export function App() {
     setEdges(clonePackEdges(pack))
     setActiveKind(pack.panel === 'fanout' ? 'queue' : 'cache')
     setSelectedNodeId(pack.seedNodes.find((node) => node.data.kind === 'service')?.id ?? null)
+    setSelectedEdgeId(null)
     setLoad(pack.defaults.load)
     setFault(pack.defaults.fault)
+    setFaultTarget(null)
     setCapacity({ ...pack.defaults.tuning })
     setTick(0)
     setElapsedSeconds(0)
@@ -959,7 +988,7 @@ export function App() {
       ? serializeReplayEnvelope(replayAttempt, { redactAnswers: true, pretty: true })
       : serializeScenarioSnapshot({
           challengeId,
-          initial: toReplayInitial(nodes, edges, load, fault, capacity),
+          initial: toReplayInitial(nodes, edges, load, fault, capacity, faultTarget),
         })
 
     try {
@@ -972,7 +1001,7 @@ export function App() {
     } catch {
       addEvent(copy.shareUnavailable, copy.clipboardDenied, 'warning')
     }
-  }, [addEvent, capacity, challengeId, copy, edges, fault, load, nodes, replayAttempt])
+  }, [addEvent, capacity, challengeId, copy, edges, fault, faultTarget, load, nodes, replayAttempt])
 
   const openHistory = useCallback(() => {
     setChallengeOpen(false)
@@ -990,6 +1019,7 @@ export function App() {
         edges: canonicalStateRef.current.edges,
         load: canonicalStateRef.current.load,
         fault: canonicalStateRef.current.fault,
+        faultTarget: canonicalStateRef.current.faultTarget,
         capacity: canonicalStateRef.current.capacity,
         challengeId: canonicalStateRef.current.challengeId,
         playing,
@@ -1016,6 +1046,7 @@ export function App() {
       setEdges(live.edges)
       setLoad(live.load)
       setFault(live.fault)
+      setFaultTarget(live.faultTarget)
       setCapacity(live.capacity)
       setChallengeId(live.challengeId)
       setPlaying(live.playing)
@@ -1123,7 +1154,7 @@ export function App() {
       className={`app-shell ${interviewerOpen ? 'interviewer-open' : 'interviewer-closed'} ${
         (replayAttempt ? replayPlaying : playing) ? 'simulation-running' : 'simulation-paused'
       } ${replayAttempt ? 'replay-mode' : ''} ${rightPanelMode === 'bottleneck' ? 'bottleneck-mode' : ''} ${
-        selectedNode ? 'node-inspector-open' : ''
+        selectedNode || selectedEdge ? 'node-inspector-open' : ''
       }`}
     >
       <TopBar
@@ -1139,10 +1170,12 @@ export function App() {
         interviewerOpen={interviewerOpen && !historyOpen && !replayAttempt}
         onToggleInterviewer={() => {
           setSelectedNodeId(null)
+          setSelectedEdgeId(null)
           setInterviewerOpen((value) => !value)
         }}
         onOpenCapacity={() => {
           setSelectedNodeId(null)
+          setSelectedEdgeId(null)
           setRightPanelMode('bottleneck')
           setInterviewerOpen(true)
         }}
@@ -1171,6 +1204,9 @@ export function App() {
           locale={locale}
           scenario={challengeId}
           selectedNode={selectedNode}
+          selectedEdge={selectedEdge}
+          faultTarget={faultTarget}
+          faultImpact={targetedFaultImpact}
           telemetry={telemetry}
           faults={activePack.faults}
           telemetryLabels={locale === 'ru'
@@ -1189,8 +1225,16 @@ export function App() {
           onNodeSelected={(node) => {
             setActiveKind(node.data.kind)
             setSelectedNodeId(node.id)
+            setSelectedEdgeId(null)
           }}
-          onInspectorClose={() => setSelectedNodeId(null)}
+          onEdgeSelected={(edge) => {
+            setSelectedNodeId(null)
+            setSelectedEdgeId(edge.id)
+          }}
+          onInspectorClose={() => {
+            setSelectedNodeId(null)
+            setSelectedEdgeId(null)
+          }}
           onTopologyChange={changeNodeTopology}
           onLoadChange={changeLoad}
           onFaultChange={changeFault}
@@ -1272,6 +1316,7 @@ export function App() {
             })}
             onOpenInterviewer={() => {
               setSelectedNodeId(null)
+              setSelectedEdgeId(null)
               setRightPanelMode('interview')
             }}
             onClose={() => setInterviewerOpen((value) => !value)}
@@ -1295,6 +1340,7 @@ export function App() {
             onReset={() => changeCapacity({ ...DEFAULT_NEWS_FEED_TUNING })}
             onOpenInterviewer={() => {
               setSelectedNodeId(null)
+              setSelectedEdgeId(null)
               setRightPanelMode('interview')
             }}
             onClose={() => setInterviewerOpen((value) => !value)}

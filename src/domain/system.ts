@@ -16,6 +16,7 @@ export type ComponentHealth =
 
 export type FaultMode =
   | 'none'
+  | 'component-outage'
   | 'cache-outage'
   | 'slow-database'
   | 'network-partition'
@@ -28,6 +29,17 @@ export type FaultMode =
 export type ScenarioId = 'url-shortener' | 'news-feed'
 export type Locale = 'en' | 'ru'
 export type LoadMultiplier = 1 | 3 | 10
+
+export type FaultTarget =
+  | { type: 'node'; id: string }
+  | { type: 'edge'; id: string }
+
+export interface SimulationFaultImpact {
+  targetType: FaultTarget['type']
+  componentKind?: ComponentKind
+  remainingReplicas: number
+  routeDisconnected: boolean
+}
 
 export interface SystemNodeData extends Record<string, unknown> {
   kind: ComponentKind
@@ -183,6 +195,7 @@ export interface SimulationInput {
   /** May sit between presets while the live traffic ramp is in progress. */
   loadMultiplier: number
   fault: FaultMode
+  faultImpact?: SimulationFaultImpact
   tick: number
   nodeCount?: number
   edgeCount?: number
@@ -218,6 +231,7 @@ export const COMPONENT_LABELS: Record<ComponentKind, string> = {
 
 export const FAULT_LABELS: Record<FaultMode, string> = {
   none: 'No fault',
+  'component-outage': 'Component outage',
   'cache-outage': 'Cache outage',
   'slow-database': 'Slow database',
   'network-partition': 'Network partition',

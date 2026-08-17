@@ -1,7 +1,7 @@
 {
   "name": "faultline",
   "private": true,
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "Animated system-design interview practice with deterministic failures, hidden cases, and replayable attempts.",
   "license": "MIT",
   "homepage": "https://leshabeats.github.io/faultline/",

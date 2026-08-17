@@ -1,9 +1,28 @@
 import { describe, expect, it } from 'vitest'
 import { playReplayAt } from './reducer'
-import { createReplayAttempt, recordReplayEvent } from './recorder'
+import {
+  createReplayAttempt,
+  createReplayFaultChangedPayload,
+  recordReplayEvent,
+} from './recorder'
 import { createTestAttempt, event, testArchitecture, timestamp } from './testFixtures'
 
 describe('replay reduction', () => {
+  it('builds only valid fault and exact-target pairs', () => {
+    expect(createReplayFaultChangedPayload(
+      'component-outage',
+      { type: 'node', id: 'database' },
+    )).toEqual({ fault: 'component-outage', targetNodeId: 'database' })
+    expect(createReplayFaultChangedPayload(
+      'network-partition',
+      { type: 'edge', id: 'client-database' },
+    )).toEqual({ fault: 'network-partition', targetEdgeId: 'client-database' })
+    expect(() => createReplayFaultChangedPayload(
+      'cache-outage',
+      { type: 'node', id: 'database' },
+    )).toThrow(/does not accept/)
+  })
+
   it('anchors the first content action at zero', () => {
     expect(() =>
       recordReplayEvent(
@@ -135,7 +154,7 @@ describe('replay reduction', () => {
         atMs: 1_000,
         source: 'user',
         type: 'fault.changed',
-        payload: { fault: 'cache-outage', targetNodeId: 'cache' },
+        payload: { fault: 'component-outage', targetNodeId: 'cache' },
       }),
     )
     attempt = recordReplayEvent(
@@ -195,7 +214,8 @@ describe('replay reduction', () => {
 
     const atStress = playReplayAt(attempt, 1_000)
     expect(atStress.load).toBe(10)
-    expect(atStress.fault).toBe('cache-outage')
+    expect(atStress.fault).toBe('component-outage')
+    expect(atStress.faultTarget).toEqual({ type: 'node', id: 'cache' })
     expect(atStress.answers).toHaveLength(0)
     expect(playReplayAt(attempt, 1_250).capacity).toMatchObject({
       indexedLookup: true,
@@ -206,6 +226,66 @@ describe('replay reduction', () => {
     expect(completed.currentTimeMs).toBe(2_000)
     expect(completed.answers[0].answer).toBe('Add request coalescing.')
     expect(completed.submissions[0]).toMatchObject({ score: 75, passedCases: 3 })
+  })
+
+  it('replays an exact edge partition and clears its target on recovery', () => {
+    let attempt = createTestAttempt()
+    attempt = recordReplayEvent(
+      attempt,
+      event({
+        id: 'partition-edge',
+        atMs: 0,
+        source: 'user',
+        type: 'fault.changed',
+        payload: { fault: 'network-partition', targetEdgeId: 'client-database' },
+      }),
+    )
+    attempt = recordReplayEvent(
+      attempt,
+      event({
+        id: 'restore-edge',
+        atMs: 1_000,
+        source: 'user',
+        type: 'fault.changed',
+        payload: { fault: 'none' },
+      }),
+    )
+
+    expect(playReplayAt(attempt, 0).faultTarget)
+      .toEqual({ type: 'edge', id: 'client-database' })
+    expect(playReplayAt(attempt, 1_000)).toMatchObject({
+      fault: 'none',
+      faultTarget: undefined,
+    })
+  })
+
+  it('clears a targeted failure when its graph element is removed', () => {
+    let attempt = createTestAttempt()
+    attempt = recordReplayEvent(
+      attempt,
+      event({
+        id: 'target-database',
+        atMs: 0,
+        source: 'user',
+        type: 'fault.changed',
+        payload: { fault: 'component-outage', targetNodeId: 'database' },
+      }),
+    )
+    attempt = recordReplayEvent(
+      attempt,
+      event({
+        id: 'remove-database-target',
+        atMs: 500,
+        source: 'user',
+        type: 'node.removed',
+        payload: { nodeId: 'database' },
+      }),
+    )
+
+    expect(playReplayAt(attempt, 500)).toMatchObject({
+      fault: 'none',
+      faultTarget: undefined,
+    })
   })
 
   it('uses timestamp, sequence, and id ordering instead of input array order', () => {

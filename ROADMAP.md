@@ -41,10 +41,18 @@ Faultline is intentionally shipping as a narrow, playable vertical slice before 
 - Configure replicas and shards on the selected canvas node and feed the topology into capacity, availability, cost, and replay.
 - Ship a responsive Russian/English interface with browser-aware defaults and a persistent language switcher.
 
-## v0.3.4 — Replay and sharing polish
+## v0.3.4 — Failure Director — shipped
+
+- Select a node and take one serving replica or the complete component offline.
+- Select an exact graph connection, partition it, and preserve alternate routes when the topology provides one.
+- Animate the fault source, affected path, isolated components, and graph-derived blast radius without persisting presentation noise.
+- Recover the target from its inspector or the canvas overlay and restore live metrics deterministically.
+- Record the exact node/edge target in backward-compatible v1 replay envelopes with strict import validation.
+- Keep the complete interaction responsive and localized in Russian and English.
+
+## v0.3.5 — Replay and sharing polish
 
 - Public URL share links once the Go service exists.
-- More explicit per-node fault targeting.
 - Deeper scoring explanations tied to the replay's key moment.
 - Optional one-click video/GIF capture for launch posts.
 

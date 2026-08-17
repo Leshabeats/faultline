@@ -1,10 +1,15 @@
 import type { SystemFlowEdge, SystemFlowNode } from '../canvas/types'
-import type { ComponentHealth, FaultMode, Locale, ScenarioId } from '../domain/system'
+import { projectFaultEdges, projectFaultNodes } from '../canvas/faultPresentation'
+import {
+  projectCacheAsideTraffic,
+  summarizeCacheHealth,
+} from '../canvas/cacheAsidePresentation'
+import type { FaultMode, FaultTarget, Locale, ScenarioId } from '../domain/system'
 import { componentLabels, faultLabels } from '../i18n'
 import { normalizeNodeTopology } from '../domain/topology'
 import type { CapacityTuning } from '../domain/system'
 import { computeSimulation, formatMetric } from '../simulation/engine'
-import { analyzeTopology } from '../simulation/topology'
+import { analyzeTargetedFault } from '../simulation/faultImpact'
 import { serializeReplayEnvelope } from './serialization'
 import { compareReplayEvents } from './reducer'
 import type {
@@ -23,12 +28,6 @@ export interface ReplayTimelineItem {
   title: string
   detail: string
   tone: ReplayTimelineTone
-}
-
-const toneForHealth = (health: ComponentHealth) => {
-  if (health === 'failed' || health === 'hot') return 'critical' as const
-  if (health === 'degraded' || health === 'backlog') return 'warning' as const
-  return 'healthy' as const
 }
 
 export const createStableId = (prefix: string) => {
@@ -68,10 +67,12 @@ export const toReplayInitial = (
   load: 1 | 3 | 10,
   fault: FaultMode,
   capacity?: CapacityTuning,
+  faultTarget?: FaultTarget | null,
 ): ReplayInitialStateV1 => ({
   architecture: { nodes: nodes.map(toReplayNode), edges: edges.map(toReplayEdge) },
   load,
   fault,
+  ...(faultTarget ? { faultTarget: { ...faultTarget } } : {}),
   ...(capacity ? { capacity: { ...capacity } } : {}),
 })
 
@@ -104,10 +105,16 @@ export const presentReplayFrame = (
   tick: number,
   paused: boolean,
   scenario: ScenarioId = 'url-shortener',
+  locale: Locale = 'en',
 ) => {
   const baseNodes = frame.architecture.nodes.map((node) => fromReplayNode(node, frame.load))
   const baseEdges = frame.architecture.edges.map((edge) => fromReplayEdge(edge, frame.load, paused))
-  const analysis = analyzeTopology(baseNodes, baseEdges)
+  const targetedImpact = analyzeTargetedFault(
+    baseNodes,
+    baseEdges,
+    frame.fault === 'none' ? null : frame.faultTarget ?? null,
+  )
+  const analysis = targetedImpact.topology
   const simulation = computeSimulation({
     loadMultiplier: frame.load,
     fault: frame.fault,
@@ -117,63 +124,56 @@ export const presentReplayFrame = (
     componentCounts: analysis.componentCounts,
     replicaCounts: analysis.replicaCounts,
     criticalPathConnected: analysis.criticalPathConnected,
+    faultImpact: targetedImpact.summary,
     capacity: frame.capacity,
     scenario,
   })
-  const routedNodeIdSet = new Set(analysis.routedNodeIds)
-  const routedCaches = baseNodes.filter(
-    (node) => node.data.kind === 'cache' && routedNodeIdSet.has(node.id),
-  )
-  const faultedCacheId = routedCaches[0]?.id
-  const nodes = baseNodes.map((node) => {
-    let health = simulation.nodeHealth[node.data.kind] ?? 'healthy'
-    let detail = simulation.nodeDetails[node.data.kind] ?? 'Healthy'
-    if (
-      analysis.criticalPathConnected &&
-      !routedNodeIdSet.has(node.id) &&
-      node.data.kind !== 'queue' &&
-      node.data.kind !== 'region'
-    ) {
-      health = 'healthy'
-      detail = 'Not on active path'
-    } else if (
-      frame.fault === 'cache-outage' &&
-      node.data.kind === 'cache' &&
-      (analysis.replicaCounts.cache ?? routedCaches.length) > 1
-    ) {
-      health = node.id === faultedCacheId ? 'failed' : 'degraded'
-      detail = node.id === faultedCacheId ? 'Unavailable' : detail
-    }
-    return { ...node, data: { ...node.data, health, detail } }
+  const nodes = projectFaultNodes({
+    nodes: baseNodes,
+    fault: frame.fault,
+    impact: targetedImpact,
+    routedNodeIds: analysis.routedNodeIds,
+    criticalPathConnected: analysis.criticalPathConnected,
+    replicaCounts: analysis.replicaCounts,
+    nodeHealth: simulation.nodeHealth,
+    nodeDetails: simulation.nodeDetails,
+    load: frame.load,
   })
   const healthByNode = new Map(nodes.map((node) => [node.id, node.data.health]))
-  const edges = baseEdges.map((edge) => {
-    const targetHealth = healthByNode.get(edge.target) ?? 'healthy'
-    let label = edge.label
-    if (scenario === 'news-feed' && edge.id === 'feed-users-api') {
-      label = `${formatMetric(simulation.metrics.throughput, 'throughput')} deliveries/s`
-    } else if (scenario === 'news-feed' && edge.id === 'feed-api-queue') {
-      label = frame.fault === 'celebrity-spike' ? '50M fan-out' : `${formatMetric(simulation.metrics.queueDepth, 'queueDepth')} queued`
-    } else if (scenario === 'news-feed' && edge.id === 'feed-queue-workers') {
-      label = formatMetric(simulation.metrics.p99, 'p99')
-    } else if (edge.id === 'clients-edge') {
-      label = `${formatMetric(simulation.metrics.throughput, 'throughput')} req/s`
-    } else if (edge.id === 'api-cache') {
-      label = `${Math.round(simulation.metrics.cacheMiss)}% miss`
-    } else if (edge.id === 'cache-database') {
-      label = formatMetric(simulation.metrics.p99, 'p99')
-    }
-    return {
-      ...edge,
-      label,
-      data: {
-        tone: toneForHealth(targetHealth),
-        intensity: frame.load,
-        paused,
-      },
-    }
+  const projectedEdges = projectFaultEdges({
+    edges: baseEdges,
+    nodeHealthById: healthByNode,
+    impact: targetedImpact,
+    intensity: frame.load,
+    paused,
+    resolveLabel: (edge) => {
+      if (scenario === 'news-feed' && edge.id === 'feed-users-api') {
+        return `${formatMetric(simulation.metrics.throughput, 'throughput')} deliveries/s`
+      }
+      if (scenario === 'news-feed' && edge.id === 'feed-api-queue') {
+        return frame.fault === 'celebrity-spike'
+          ? '50M fan-out'
+          : `${formatMetric(simulation.metrics.queueDepth, 'queueDepth')} queued`
+      }
+      if (scenario === 'news-feed' && edge.id === 'feed-queue-workers') {
+        return formatMetric(simulation.metrics.p99, 'p99')
+      }
+      if (edge.id === 'clients-edge') {
+        return `${formatMetric(simulation.metrics.throughput, 'throughput')} req/s`
+      }
+      return edge.label
+    },
   })
-  return { nodes, edges }
+  const cacheHealth = summarizeCacheHealth(nodes)
+  const edges = scenario === 'url-shortener'
+    ? projectCacheAsideTraffic({
+        edges: projectedEdges,
+        snapshot: simulation,
+        cacheHealth,
+        locale,
+      })
+    : projectedEdges
+  return { nodes, edges, faultImpact: targetedImpact }
 }
 
 const legacyReplayTranslations = [

@@ -26,7 +26,7 @@ describe('topology analysis', () => {
     expect(result.routedNodeIds).not.toContain(cacheReplica.id)
   })
 
-  it('counts a replica only when it completes a client-to-database path', () => {
+  it('counts a reachable cache-aside replica without inventing a cache-to-database call', () => {
     const result = analyzeTopology([...seedNodes, cacheReplica], [
       ...seedEdges,
       {
@@ -36,23 +36,27 @@ describe('topology analysis', () => {
         type: 'traffic',
         data: { tone: 'healthy', intensity: 1, paused: false },
       },
-      {
-        id: 'cache-replica-database',
-        source: cacheReplica.id,
-        target: 'database',
-        type: 'traffic',
-        data: { tone: 'healthy', intensity: 1, paused: false },
-      },
     ])
 
     expect(result.componentCounts.cache).toBe(2)
     expect(result.routedNodeIds).toContain(cacheReplica.id)
   })
 
-  it('fails closed after the final client-to-database route is removed', () => {
+  it('keeps the direct database fallback when the cache path is removed', () => {
     const result = analyzeTopology(
       seedNodes,
-      seedEdges.filter((edge) => edge.id !== 'cache-database'),
+      seedEdges.filter((edge) => edge.id !== 'api-cache'),
+    )
+
+    expect(result.criticalPathConnected).toBe(true)
+    expect(result.routedNodeIds).not.toContain('cache')
+    expect(result.componentCounts.database).toBe(1)
+  })
+
+  it('fails closed after the application-to-database route is removed', () => {
+    const result = analyzeTopology(
+      seedNodes,
+      seedEdges.filter((edge) => edge.id !== 'api-database'),
     )
 
     expect(result.criticalPathConnected).toBe(false)

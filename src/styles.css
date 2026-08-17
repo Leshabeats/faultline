@@ -477,6 +477,28 @@ button:disabled {
   line-height: 1;
 }
 
+.node-replica-loss {
+  min-width: 25px;
+  padding: 4px 6px;
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 3;
+  border: 1px solid rgba(255, 89, 71, 0.2);
+  border-radius: 8px;
+  color: var(--coral-dark);
+  background: rgba(255, 245, 243, 0.94);
+  font-size: 9px;
+  font-weight: 750;
+  line-height: 1;
+  animation: replica-loss-enter 320ms cubic-bezier(.2,.8,.2,1);
+}
+
+@keyframes replica-loss-enter {
+  from { opacity: 0; transform: translateY(-5px) scale(.86); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
 .system-node:hover {
   border-color: rgba(123, 138, 153, 0.42);
   box-shadow: 0 14px 34px rgba(43, 56, 70, 0.11), 0 2px 4px rgba(43, 56, 70, 0.05);
@@ -508,6 +530,36 @@ button:disabled {
 
 .system-node.health-hot {
   background: rgba(255, 252, 250, 0.93);
+}
+
+.system-node.fault-source {
+  border-color: rgba(255, 89, 71, 0.48);
+  box-shadow: 0 0 0 1px rgba(255, 89, 71, 0.16), 0 14px 38px rgba(255, 89, 71, 0.14);
+}
+
+.system-node.fault-source::after {
+  content: '';
+  position: absolute;
+  inset: -8px;
+  z-index: -2;
+  border: 1px solid rgba(255, 89, 71, 0.34);
+  border-radius: 28px;
+  animation: fault-pulse 1.8s ease-out infinite;
+}
+
+.system-node.fault-affected {
+  border-color: rgba(245, 161, 37, 0.4);
+  box-shadow: 0 10px 30px rgba(245, 161, 37, 0.1);
+}
+
+.system-node.fault-isolated {
+  opacity: .62;
+  filter: saturate(.58);
+}
+
+@keyframes fault-pulse {
+  0% { opacity: .8; transform: scale(.94); }
+  75%, 100% { opacity: 0; transform: scale(1.12); }
 }
 
 .system-node-icon {
@@ -877,6 +929,32 @@ button:disabled {
   opacity: 0.42;
 }
 
+.traffic-edge-base.is-selected {
+  stroke: var(--blue);
+  stroke-width: 5;
+  opacity: .24;
+}
+
+.traffic-edge-flow.is-selected:not(.fault-source) {
+  stroke-width: 4.6;
+}
+
+.traffic-edge-base.fault-source {
+  stroke-width: 6;
+  stroke-dasharray: 7 9;
+  opacity: .2;
+}
+
+.traffic-edge-flow.fault-source {
+  stroke-width: 4.2;
+  stroke-dasharray: 9 14;
+  opacity: .9;
+}
+
+.traffic-edge-flow.fault-affected {
+  stroke-width: 4;
+}
+
 .simulation-paused .stateful-icon,
 .simulation-paused .stateful-icon * {
   animation-play-state: paused !important;
@@ -901,6 +979,14 @@ button:disabled {
   pointer-events: all;
   white-space: nowrap;
   backdrop-filter: blur(10px);
+}
+
+.edge-label.is-branch-label {
+  width: max-content;
+  max-width: 174px;
+  line-height: 1.25;
+  text-align: center;
+  white-space: normal;
 }
 
 /* Component dock */
@@ -1129,6 +1215,153 @@ button:disabled {
   color: var(--ink-tertiary);
   font-size: 10px;
   font-variant-numeric: tabular-nums;
+}
+
+.connection-inspector > header strong {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 17px;
+}
+
+.connection-health {
+  padding: 0 20px 14px;
+}
+
+.connection-health .health-pill {
+  max-width: 100%;
+  line-height: 1.35;
+}
+
+.failure-director-card {
+  display: grid;
+  gap: 10px;
+  margin: 0 14px 12px;
+  padding: 12px;
+  border: 1px solid rgba(140, 153, 166, 0.18);
+  border-radius: 14px;
+  background: rgba(246, 248, 250, 0.9);
+  transition: border-color 180ms ease, background-color 180ms ease;
+}
+
+.failure-director-card.is-active {
+  border-color: rgba(255, 89, 71, 0.22);
+  background: rgba(255, 247, 245, 0.94);
+}
+
+.failure-director-card button {
+  width: fit-content;
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 11px;
+  border: 1px solid rgba(140, 153, 166, 0.2);
+  border-radius: 10px;
+  color: var(--ink);
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(30, 42, 54, 0.06);
+  font-size: 10px;
+  font-weight: 620;
+}
+
+.failure-director-card.is-active button {
+  color: var(--coral-dark);
+}
+
+.blast-radius-panel {
+  min-width: 320px;
+  max-width: min(540px, calc(100% - 48px));
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 12px;
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  z-index: 15;
+  transform: translateX(-50%);
+  border: 1px solid rgba(255, 89, 71, 0.18);
+  border-radius: 15px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 16px 42px rgba(42, 52, 64, 0.12);
+  backdrop-filter: blur(24px) saturate(1.15);
+  animation: blast-radius-enter 260ms cubic-bezier(.2,.8,.2,1);
+}
+
+@keyframes blast-radius-enter {
+  from { opacity: 0; transform: translate(-50%, -8px) scale(.98); }
+  to { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+
+.blast-radius-summary,
+.causal-path {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.blast-radius-summary > span,
+.causal-path > span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--ink-tertiary);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+
+.blast-radius-summary strong {
+  font-size: 11px;
+  font-weight: 620;
+  white-space: nowrap;
+}
+
+.causal-path > div {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+}
+
+.causal-path > div > span {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.causal-path i {
+  color: var(--coral);
+  font-size: 11px;
+  font-style: normal;
+}
+
+.causal-path b {
+  overflow: hidden;
+  font-size: 10px;
+  font-weight: 560;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.blast-radius-panel > button {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border-radius: 10px;
+  color: var(--coral-dark);
+  background: rgba(255, 89, 71, 0.09);
+  font-size: 9px;
+  font-weight: 650;
+  white-space: nowrap;
 }
 
 .health-pill {
@@ -2535,6 +2768,25 @@ button:disabled {
     left: 10px;
     z-index: 60;
     border-radius: 24px;
+  }
+
+  .blast-radius-panel {
+    width: calc(100% - 24px);
+    min-width: 0;
+    grid-template-columns: 1fr auto;
+    gap: 7px 10px;
+    top: 10px;
+    padding: 9px 10px;
+  }
+
+  .blast-radius-panel .causal-path {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .blast-radius-panel > button {
+    grid-column: 2;
+    grid-row: 1;
   }
 
 

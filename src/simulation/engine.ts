@@ -42,8 +42,76 @@ const baseMetrics = (load: number): SimulationMetrics => ({
   queueDepth: round(220 * load),
 })
 
+const applyTargetedFaultImpact = (
+  metrics: SimulationMetrics,
+  input: SimulationInput,
+): SimulationMetrics => {
+  const impact = input.faultImpact
+  if (!impact) return metrics
+  const loss = impact.remainingReplicas === 0
+    ? 1
+    : 1 / (impact.remainingReplicas + 1)
+  const next = { ...metrics }
+
+  if (impact.targetType === 'edge') {
+    if (!impact.routeDisconnected) {
+      next.throughput *= 0.82
+      next.p99 += 85
+      next.errorRate += 2.4
+      next.queueDepth *= 1.45
+    }
+    return next
+  }
+
+  switch (impact.componentKind) {
+    case 'gateway':
+      next.throughput *= 1 - 0.38 * loss
+      next.p99 += 110 * loss
+      next.errorRate += 6.5 * loss
+      break
+    case 'service':
+      next.throughput *= 1 - 0.32 * loss
+      next.p99 *= 1 + 1.15 * loss
+      next.errorRate += 4.8 * loss
+      next.queueDepth *= 1 + 1.8 * loss
+      break
+    case 'cache':
+      next.cacheMiss += 58 * loss
+      next.p99 *= 1 + 1.4 * loss
+      next.dbCpu += 34 * loss
+      next.errorRate += 3.6 * loss
+      break
+    case 'queue':
+      next.queueDepth = Math.max(next.queueDepth, 2_200 * input.loadMultiplier * loss)
+      next.p99 *= 1 + 0.75 * loss
+      next.errorRate += 2.2 * loss
+      break
+    case 'database':
+      next.dbCpu += 42 * loss
+      next.p99 *= 1 + 1.8 * loss
+      next.errorRate += 5.4 * loss
+      break
+    case 'client':
+    case 'region':
+    case undefined:
+      break
+  }
+  return next
+}
+
 function computeUrlShortenerSimulation(input: SimulationInput): SimulationSnapshot {
   const { loadMultiplier: load, fault, tick } = input
+  const cacheReplicaCount = Math.max(
+    1,
+    input.replicaCounts?.cache ?? input.componentCounts?.cache ?? 1,
+  )
+  const targetedCacheUnavailable = input.faultImpact?.targetType === 'node' &&
+    input.faultImpact.componentKind === 'cache' &&
+    input.faultImpact.remainingReplicas === 0 &&
+    (input.componentCounts === undefined || (input.componentCounts.cache ?? 0) === 0)
+  const scenarioCacheUnavailable = fault === 'cache-outage' && cacheReplicaCount === 1
+  const cacheUnavailable = targetedCacheUnavailable || scenarioCacheUnavailable
+  const capacityFault = cacheUnavailable ? 'cache-outage' : fault
   const baseline = baseMetrics(load)
   let metrics: SimulationMetrics = { ...baseline }
   const nodeHealth: Partial<Record<ComponentKind, ComponentHealth>> = {
@@ -93,6 +161,7 @@ function computeUrlShortenerSimulation(input: SimulationInput): SimulationSnapsh
       nodeHealth.service = 'degraded'
       break
     case 'network-partition':
+      if (input.faultImpact?.targetType === 'edge') break
       metrics = {
         ...metrics,
         throughput: baseline.throughput * 0.63,
@@ -150,7 +219,7 @@ function computeUrlShortenerSimulation(input: SimulationInput): SimulationSnapsh
 
   const capacity = estimateCapacity({
     loadMultiplier: load,
-    fault,
+    fault: capacityFault,
     tuning: input.capacity ?? DEFAULT_CAPACITY_TUNING,
     componentCounts: input.componentCounts,
     replicaCounts: input.replicaCounts,
@@ -165,12 +234,8 @@ function computeUrlShortenerSimulation(input: SimulationInput): SimulationSnapsh
         ? 'degraded'
         : 'healthy'
     nodeHealth.queue = metrics.queueDepth >= 2_000 ? 'backlog' : 'healthy'
-    if (fault === 'cache-outage') {
-      const cacheReplicas = Math.max(
-        1,
-        input.replicaCounts?.cache ?? input.componentCounts?.cache ?? 1,
-      )
-      nodeHealth.cache = cacheReplicas > 1 ? 'degraded' : 'failed'
+    if (capacityFault === 'cache-outage') {
+      nodeHealth.cache = cacheReplicaCount > 1 ? 'degraded' : 'failed'
     } else {
       nodeHealth.cache = capacity.utilization.cache >= 1 ? 'hot' : 'healthy'
     }
@@ -182,9 +247,11 @@ function computeUrlShortenerSimulation(input: SimulationInput): SimulationSnapsh
     metrics.p99 = Math.max(metrics.p99, 1_500)
     metrics.errorRate = Math.max(metrics.errorRate, 88)
     metrics.queueDepth = Math.max(metrics.queueDepth, 1_200 * load)
-    nodeHealth.service = 'failed'
-    nodeHealth.gateway = 'degraded'
   }
+
+  metrics = targetedCacheUnavailable && input.capacity
+    ? metrics
+    : applyTargetedFaultImpact(metrics, input)
 
   metrics = withMotion(
     {
@@ -197,6 +264,11 @@ function computeUrlShortenerSimulation(input: SimulationInput): SimulationSnapsh
     },
     tick,
   )
+
+  // A fully unavailable cache cannot produce an animated 99.x% "miss" value.
+  // Every lookup is bypassed to the source of truth until Redis recovers.
+  if (cacheUnavailable) metrics.cacheMiss = 100
+  if (cacheUnavailable) nodeHealth.cache = 'failed'
 
   if (nodeHealth.database === 'hot' && metrics.dbCpu < 80) {
     nodeHealth.database = fault === 'none' ? 'healthy' : 'degraded'
@@ -254,7 +326,10 @@ function computeNewsFeedSimulation(input: SimulationInput): SimulationSnapshot {
     componentCounts: input.componentCounts,
     criticalPathConnected: input.criticalPathConnected,
   })
-  const metrics = withMotion(report.metrics, input.tick)
+  const metrics = withMotion(
+    applyTargetedFaultImpact(report.metrics, input),
+    input.tick,
+  )
   const nodeHealth: Partial<Record<ComponentKind, ComponentHealth>> = {
     client: 'healthy',
     gateway: input.criticalPathConnected === false ? 'degraded' : 'healthy',
@@ -288,9 +363,9 @@ function computeNewsFeedSimulation(input: SimulationInput): SimulationSnapshot {
     database: `${Math.round(report.utilization.postStore * 100)}% load`,
     region: 'Connected',
   }
-  const severity = report.status === 'saturated'
+  const severity = metrics.errorRate >= 8 || metrics.p99 >= 5_000
     ? 'critical'
-    : report.status === 'at-risk'
+    : metrics.errorRate >= 2 || metrics.p99 >= 1_000
       ? 'degraded'
       : 'normal'
 

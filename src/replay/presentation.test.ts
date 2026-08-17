@@ -24,14 +24,106 @@ describe('replay presentation', () => {
     const frame = playReplayAt(attempt, 0)
     const presentation = presentReplayFrame(frame, 0, true)
     const redis = presentation.nodes.find((node) => node.id === 'cache')
-    const databaseEdge = presentation.edges.find((edge) => edge.id === 'cache-database')
+    const cacheEdge = presentation.edges.find((edge) => edge.id === 'api-cache')
+    const databaseEdge = presentation.edges.find((edge) => edge.id === 'api-database')
 
     expect(redis?.data).toMatchObject({ health: 'failed', detail: 'Unavailable', load: 1 })
-    expect(databaseEdge?.data).toMatchObject({ tone: 'warning', intensity: 1, paused: true })
+    expect(cacheEdge).toMatchObject({ label: 'Unavailable' })
+    expect(cacheEdge?.data).toMatchObject({ tone: 'critical', intensity: 1, paused: true, flowRatio: 0 })
+    expect(databaseEdge?.label).toContain('fallback')
+    expect(databaseEdge?.data).toMatchObject({ tone: 'warning', intensity: 1, paused: true, flowRatio: 1 })
     expect(attempt.initial.architecture.nodes[0].data).toEqual({
       kind: 'client',
       label: 'Clients',
     })
+  })
+
+  it('presents the exact replayed connection as partitioned', () => {
+    const attempt = createReplayAttempt({
+      id: 'targeted-presentation',
+      challengeId: 'url-shortener',
+      startedAt: '2026-08-03T10:00:00.000Z',
+      initial: toReplayInitial(
+        seedNodes,
+        seedEdges,
+        1,
+        'network-partition',
+        undefined,
+        { type: 'edge', id: 'api-cache' },
+      ),
+    })
+
+    const presentation = presentReplayFrame(playReplayAt(attempt, 0), 0, false)
+    const target = presentation.edges.find((edge) => edge.id === 'api-cache')
+
+    expect(target?.data).toMatchObject({
+      tone: 'critical',
+      paused: true,
+      faultRole: 'source',
+    })
+    expect(presentation.faultImpact.target)
+      .toEqual({ type: 'edge', id: 'api-cache' })
+  })
+
+  it('presents the exact replayed replica loss on its source node', () => {
+    const replicatedNodes = seedNodes.map((node) => node.id === 'api'
+      ? { ...node, data: { ...node.data, replicas: 2 } }
+      : node)
+    const attempt = createReplayAttempt({
+      id: 'targeted-node-presentation',
+      challengeId: 'url-shortener',
+      startedAt: '2026-08-03T10:00:00.000Z',
+      initial: toReplayInitial(
+        replicatedNodes,
+        seedEdges,
+        1,
+        'component-outage',
+        undefined,
+        { type: 'node', id: 'api' },
+      ),
+    })
+
+    const presentation = presentReplayFrame(playReplayAt(attempt, 0), 0, false)
+    expect(presentation.nodes.find((node) => node.id === 'api')?.data)
+      .toMatchObject({
+        health: 'degraded',
+        detail: 'One replica offline',
+        faultRole: 'source',
+        lostReplicas: 1,
+      })
+  })
+
+  it('replays a Redis outage through the direct database fallback', () => {
+    const attempt = createReplayAttempt({
+      id: 'cache-fallback-presentation',
+      challengeId: 'url-shortener',
+      startedAt: '2026-08-03T10:00:00.000Z',
+      initial: toReplayInitial(
+        seedNodes,
+        seedEdges,
+        1,
+        'component-outage',
+        undefined,
+        { type: 'node', id: 'cache' },
+      ),
+    })
+
+    const presentation = presentReplayFrame(playReplayAt(attempt, 0), 0, false)
+
+    expect(presentation.faultImpact.summary?.routeDisconnected).toBe(false)
+    expect(presentation.nodes.find(({ id }) => id === 'cache')?.data)
+      .toMatchObject({ health: 'failed', detail: 'Instance offline' })
+    expect(presentation.nodes.find(({ id }) => id === 'api')?.data)
+      .toMatchObject({ health: 'healthy' })
+    expect(presentation.nodes.find(({ id }) => id === 'database')?.data)
+      .toMatchObject({ health: 'healthy' })
+    expect(presentation.nodes.filter((node) => node.data.faultRole === 'isolated'))
+      .toHaveLength(0)
+    expect(presentation.edges.some(({ id }) => id === 'cache-database')).toBe(false)
+    expect(presentation.edges.find(({ id }) => id === 'api-cache'))
+      .toMatchObject({ label: 'Unavailable', data: { paused: true, flowRatio: 0 } })
+    expect(presentation.edges.find(({ id }) => id === 'api-database'))
+      .toMatchObject({ data: { tone: 'warning', flowRatio: 1 } })
   })
 
   it('sorts imported timeline events independently from their JSON order', () => {

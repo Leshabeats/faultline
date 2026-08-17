@@ -55,6 +55,99 @@ describe('replay serialization', () => {
     expect(parsed.value.attempt.initial.capacity).toEqual(attempt.initial.capacity)
   })
 
+  it('round-trips both targeted and untargeted fault states', () => {
+    const targeted = createCompletedTestAttempt()
+    targeted.initial.fault = 'component-outage'
+    targeted.initial.faultTarget = { type: 'node', id: 'database' }
+    const targetedResult = parseReplayEnvelope(serializeReplayEnvelope(targeted))
+
+    expect(targetedResult.ok).toBe(true)
+    if (!targetedResult.ok) return
+    expect(targetedResult.value.attempt.initial.faultTarget)
+      .toEqual({ type: 'node', id: 'database' })
+
+    const untargeted = createCompletedTestAttempt()
+    const untargetedResult = parseReplayEnvelope(serializeReplayEnvelope(untargeted))
+    expect(untargetedResult.ok).toBe(true)
+    if (!untargetedResult.ok) return
+    expect(untargetedResult.value.attempt.initial).not.toHaveProperty('faultTarget')
+  })
+
+  it('rejects mismatched, ambiguous, or dangling targeted failures', () => {
+    const mismatched = createCompletedTestAttempt()
+    mismatched.events.push({
+      id: 'mismatched-fault',
+      atMs: mismatched.durationMs,
+      sequence: mismatched.events.length,
+      source: 'user',
+      type: 'fault.changed',
+      payload: { fault: 'cache-outage', targetNodeId: 'database' },
+    } as never)
+    expect(parseReplayEnvelope(JSON.stringify(createReplayEnvelope(mismatched))).ok)
+      .toBe(false)
+
+    const ambiguous = createCompletedTestAttempt()
+    ambiguous.events.push({
+      id: 'ambiguous-fault',
+      atMs: ambiguous.durationMs,
+      sequence: ambiguous.events.length,
+      source: 'user',
+      type: 'fault.changed',
+      payload: {
+        fault: 'network-partition',
+        targetNodeId: 'database',
+        targetEdgeId: 'client-database',
+      },
+    } as never)
+    expect(parseReplayEnvelope(JSON.stringify({
+      schema: 'faultline.replay',
+      version: 1,
+      exportedAt: ambiguous.updatedAt,
+      attempt: ambiguous,
+    })).ok).toBe(false)
+
+    const mismatchedInitial = createCompletedTestAttempt()
+    mismatchedInitial.initial.fault = 'cache-outage'
+    mismatchedInitial.initial.faultTarget = { type: 'node', id: 'database' }
+    expect(parseReplayEnvelope(JSON.stringify(createReplayEnvelope(mismatchedInitial))).ok)
+      .toBe(false)
+
+    const dangling = createCompletedTestAttempt()
+    dangling.initial.fault = 'component-outage'
+    dangling.initial.faultTarget = { type: 'node', id: 'missing' }
+    expect(parseReplayEnvelope(JSON.stringify({
+      schema: 'faultline.replay',
+      version: 1,
+      exportedAt: dangling.updatedAt,
+      attempt: dangling,
+    })).ok).toBe(false)
+
+    const danglingEvent = createCompletedTestAttempt()
+    danglingEvent.events.push({
+      id: 'dangling-target-event',
+      atMs: danglingEvent.durationMs,
+      sequence: danglingEvent.events.length,
+      source: 'user',
+      type: 'fault.changed',
+      payload: { fault: 'component-outage', targetNodeId: 'missing' },
+    })
+    expect(parseReplayEnvelope(JSON.stringify({
+      schema: 'faultline.replay',
+      version: 1,
+      exportedAt: danglingEvent.updatedAt,
+      attempt: danglingEvent,
+    })).ok).toBe(false)
+
+    const untargetedComponentFailure = createCompletedTestAttempt()
+    untargetedComponentFailure.initial.fault = 'component-outage'
+    expect(parseReplayEnvelope(JSON.stringify({
+      schema: 'faultline.replay',
+      version: 1,
+      exportedAt: untargetedComponentFailure.updatedAt,
+      attempt: untargetedComponentFailure,
+    })).ok).toBe(false)
+  })
+
   it('round-trips compact replica and shard topology on replay nodes', () => {
     const attempt = createCompletedTestAttempt()
     attempt.initial.architecture.nodes[1].data.replicas = 3

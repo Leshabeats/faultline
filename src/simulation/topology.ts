@@ -41,9 +41,17 @@ export function analyzeTopology<
 
   const reachableFromClients = walkGraph(clients, outgoing)
   const canReachDatabase = walkGraph(databases, incoming)
-  const routedNodeIds = [...reachableFromClients]
-    .filter((nodeId) => canReachDatabase.has(nodeId))
-    .sort()
+  const databasePathNodeIds = new Set(
+    [...reachableFromClients].filter((nodeId) => canReachDatabase.has(nodeId)),
+  )
+  // A cache-aside lookup is an optional branch owned by an application that
+  // remains on the source-of-truth path. Redis does not need a fake edge to the
+  // database to contribute serving capacity.
+  const optionalCacheIds = nodes
+    .filter((node) => node.data.kind === 'cache' && reachableFromClients.has(node.id))
+    .filter((node) => (incoming.get(node.id) ?? []).some((id) => databasePathNodeIds.has(id)))
+    .map((node) => node.id)
+  const routedNodeIds = [...new Set([...databasePathNodeIds, ...optionalCacheIds])].sort()
   const routedNodeIdSet = new Set(routedNodeIds)
   const replicaCounts: TopologyAnalysis['replicaCounts'] = {}
   const componentCounts = nodes.reduce<TopologyAnalysis['componentCounts']>(
