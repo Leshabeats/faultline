@@ -36,7 +36,8 @@ func New(cfg config.Config, svc *service.PublicReplayService, logger *slog.Logge
 	router.Use(server.cors)
 	router.Get("/healthz", server.healthz)
 	router.Route("/api/public-replays", func(r chi.Router) {
-		r.With(server.limitBody, server.rateLimit).Post("/", server.publish)
+		r.Use(server.rateLimit)
+		r.With(server.limitBody).Post("/", server.publish)
 		r.Get("/{id}", server.get)
 		r.Delete("/{id}", server.remove)
 	})

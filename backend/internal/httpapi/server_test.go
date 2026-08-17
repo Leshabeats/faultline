@@ -292,3 +292,35 @@ func TestPublishRejectsWhenStorageQuotaExceeded(t *testing.T) {
 	}
 }
 
+func TestGetIsRateLimited(t *testing.T) {
+	db, err := sql.Open("sqlite", "file:getlimit-"+t.Name()+"?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := migrate.Up(db); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{
+		Env:                "test",
+		HTTPAddr:           "127.0.0.1:0",
+		PublicShareBase:    "http://127.0.0.1:4173",
+		CORSOrigins:        []string{"http://127.0.0.1:4173"},
+		MaxBodyBytes:       1_100_000,
+		RateLimitPerMinute: 1,
+		MaxStoredReplays:   200,
+		MaxStoredBytes:     50_000_000,
+	}
+	handler := New(cfg, service.NewPublicReplayService(repository.NewPublicReplayRepository(db), cfg.PublicShareBase, 200, 50_000_000), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	first := httptest.NewRecorder()
+	handler.ServeHTTP(first, httptest.NewRequest(http.MethodGet, "/api/public-replays/missing-id-12345678", nil))
+	if first.Code != http.StatusNotFound {
+		t.Fatalf("first get status %d", first.Code)
+	}
+	second := httptest.NewRecorder()
+	handler.ServeHTTP(second, httptest.NewRequest(http.MethodGet, "/api/public-replays/missing-id-12345678", nil))
+	if second.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 429 for second GET, got %d", second.Code)
+	}
+}
+
