@@ -21,6 +21,7 @@ The current release has two coherent challenge packs: a calibrated URL Shortener
 5. Defend the trade-off when the interviewer challenges the assumptions.
 6. Submit against the complete deterministic judge, including redacted hidden cases.
 7. Replay the exact architecture, capacity choices, targeted fault, reasoning, and submission sequence.
+8. Publish a redacted Shareable Run and open the public link in a clean browser session.
 
 The launch topology scores `76/100`. Connecting a complete second cache path makes the cache-outage case pass and raises the score to `83/100`; dropping an unconnected box onto the canvas changes nothing.
 
@@ -52,27 +53,41 @@ The launch topology scores `76/100`. Connecting a complete second cache path mak
 - Semantic attempt recording for load, exact node/edge fault target, topology, capacity tuning, interviewer-answer, and submission actions without storing derived animation noise.
 - Local attempt history with deterministic play/pause, scrub, previous/next event controls, `0.5x`/`1x`/`2x` speed, and synchronized metrics.
 - Versioned public replay export/import, strict validation, safe local-storage retention, and migration from the v0.1 scenario snapshot.
+- Shareable Run: publish a redacted attempt to the local Go API, copy a public URL, and replay it read-only without sign-in.
 - Interview timer, pause/run control, event history, full component creation, and responsive desktop/mobile layouts.
 - Unit coverage for simulation behavior, targeted-fault graph impact, topology reachability, judge scoring/redaction, provider routing, replay reduction, serialization, migration, and persistence.
 
 ## Run locally
 
-Requires a recent Node.js release and npm.
+Requires a recent Node.js release, npm, and Go 1.22+ if you want public share links.
 
 ```bash
 npm install
 npm run dev -- --host 127.0.0.1 --port 4173
 ```
 
-Open <http://127.0.0.1:4173>.
+Open <http://127.0.0.1:4173>. History, local export/import, and replay work without a backend.
+
+To publish a Shareable Run:
+
+```bash
+# terminal 1
+npm run dev:api
+
+# terminal 2
+npm run dev -- --host 127.0.0.1 --port 4173
+```
+
+The Vite dev server proxies `/api` and `/healthz` to `http://127.0.0.1:8787`. Example environment files live at [`.env.example`](.env.example) and [`backend/.env.example`](backend/.env.example). SQLite data stays in `backend/data/` and is gitignored.
 
 Other commands:
 
 ```bash
-npm run test:run  # run tests once
+npm run test:run  # run frontend tests once
 npm test          # run Vitest in watch mode
 npm run build     # type-check and create the production bundle
 npm run preview   # serve the production bundle locally
+npm run test:api  # run Go tests
 ```
 
 ## Simulation truth and interview providers
@@ -122,11 +137,11 @@ class RemoteInterviewProvider implements InterviewProvider {
 interviewRouter.register(new RemoteInterviewProvider())
 ```
 
-The planned server is Go (`net/http` with Chi): one small binary for challenge manifests, saved submissions, SSE model streaming, and provider credentials. `/api/interview` can translate the provider-neutral request to an OpenAI-compatible endpoint, Perplexity, or another model router. Validate its response into the `InterviewResponse` contract before returning it, and fall back to `local` when the remote provider is unavailable. SQLite is the local-first persistence target; PostgreSQL is the hosted target.
+The first Go service is now in `backend/`: Chi + SQLite, versioned public-replay storage, hashed delete tokens, request-size limits, and basic rate limiting. It stores an immutable public envelope and does **not** re-run the judge. Hidden-case secrecy, signed scores, and PostgreSQL remain later work. `/api/interview` can still grow later into an OpenAI-compatible or Perplexity adapter; keep provider credentials on the server.
 
 ## Privacy
 
-This release makes no AI or analytics API calls. Completed attempts are stored only in this browser's local storage so History survives a reload; exported replay files are created only when you explicitly request them and redact interview-answer text by default. No API key is required. When a remote provider is added, proxy it through a backend and never place secrets in Vite environment variables or client bundles.
+This release makes no AI or analytics API calls. Completed attempts stay in this browser's local storage so History survives a reload. Export and Publish both redact interviewer answers, prompts, and feedback by default. No API key is required. Public share links are immutable snapshots of that redacted envelope; a delete token is shown once and stored only in the publishing browser. When a remote provider is added, proxy it through a backend and never place secrets in Vite environment variables or client bundles.
 
 ## Contributing
 
@@ -136,16 +151,19 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Product d
 
 ```text
 src/
-  challenges/   Challenge manifests, requirements, cases, and rubrics
-  canvas/       React Flow nodes, edges, types, and launch scenario
-  capacity/     URL-shortener workload, bottleneck, calibration packs, and cost model
-  components/   Product chrome, controls, telemetry, and animated icons
-  domain/       Shared system-design and simulation contracts
-  interview/    Provider interface, router, local interviewer, and tests
+  challenges/    Challenge manifests, requirements, cases, and rubrics
+  canvas/        React Flow nodes, edges, types, and launch scenario
+  capacity/      URL-shortener workload, bottleneck, calibration packs, and cost model
+  components/    Product chrome, controls, telemetry, and animated icons
+  domain/        Shared system-design and simulation contracts
+  interview/     Provider interface, router, local interviewer, and tests
   judge/         Deterministic public/hidden suite, redaction, scoring, and tests
   newsFeed/      Celebrity workload, fan-out, freshness, backlog, and cost model
+  publicReplay/  Public envelope, publish client, capability store, and hash routing
   replay/        Versioned semantic log, reducer, import/export, repository, and tests
-  simulation/   Deterministic engine, topology analysis, and tests
-  App.tsx       Canvas orchestration and end-to-end interaction state
-  styles.css    Responsive visual and motion system
+  simulation/    Deterministic engine, topology analysis, and tests
+  App.tsx        Canvas orchestration and end-to-end interaction state
+  styles.css     Responsive visual and motion system
+backend/
+  cmd/faultline  Chi HTTP server, graceful shutdown, and SQLite bootstrap
 ```

@@ -1,5 +1,5 @@
 import { useEffect, useRef, type KeyboardEvent } from 'react'
-import { CheckCircle2, CircleCheck, CircleX, Lock, Play, RotateCcw, Trophy, X } from 'lucide-react'
+import { CheckCircle2, CircleCheck, CircleX, Globe, Lock, Play, RotateCcw, Trophy, X } from 'lucide-react'
 import type { ChallengeDefinition } from '../challenges/types'
 import type { JudgeReport } from '../judge'
 import type { Locale } from '../domain/system'
@@ -23,6 +23,7 @@ interface ChallengePanelProps {
   onRunCase: (load: 1 | 3 | 10, fault: ChallengeDefinition['cases'][number]['fault']) => void
   report: JudgeReport | null
   onSubmitDesign: () => void
+  onPublishReplay?: () => void
 }
 
 export function ChallengePanel({
@@ -33,6 +34,7 @@ export function ChallengePanel({
   onRunCase,
   report,
   onSubmitDesign,
+  onPublishReplay,
 }: ChallengePanelProps) {
   const ru = locale === 'ru'
   const content = localizeChallengeDefinition(challenge, locale)
@@ -218,6 +220,11 @@ export function ChallengePanel({
           </div>
           <div className="challenge-footer-actions">
             <button type="button" className="secondary" onClick={onClose}>{ru ? 'Назад к схеме' : 'Back to board'}</button>
+            {report && onPublishReplay && (
+              <button type="button" className="secondary" onClick={onPublishReplay}>
+                <Globe size={16} /> {ru ? 'Опубликовать повтор' : 'Publish replay'}
+              </button>
+            )}
             <button type="button" onClick={onSubmitDesign}>
               {report ? ru ? 'Запустить снова' : 'Run again' : ru ? 'Отправить решение' : 'Submit design'}
               {report ? <RotateCcw size={16} /> : <Play size={16} fill="currentColor" />}

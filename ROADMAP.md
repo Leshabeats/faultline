@@ -50,18 +50,19 @@ Faultline is intentionally shipping as a narrow, playable vertical slice before 
 - Record the exact node/edge target in backward-compatible v1 replay envelopes with strict import validation.
 - Keep the complete interaction responsive and localized in Russian and English.
 
-## v0.3.5 — Replay and sharing polish
+## v0.3.5 — Shareable Run
 
-- Public URL share links once the Go service exists.
-- Deeper scoring explanations tied to the replay's key moment.
-- Optional one-click video/GIF capture for launch posts.
+- Publish a redacted attempt from History or the replay rail.
+- Store an immutable public envelope in the local-first Go/SQLite service.
+- Open `#/r/{id}` without sign-in, replay events, and recompute score in the browser.
+- Keep interviewer answers private and never return the delete token from GET.
 
-## v0.4 — Go service
+## v0.4 — Hosted Go service
 
-- Small Chi/`net/http` API.
+- Deploy the Chi API beyond local Docker/dev.
 - SQLite locally and PostgreSQL when hosted.
 - Server-side hidden judge and signed submission results.
-- Saved challenges, submissions, and public share links.
+- Saved challenges and comparable submissions.
 
 ## v0.5 — AI interviewer
 

@@ -28,7 +28,9 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "test": "vitest",
-    "test:run": "vitest run"
+    "test:run": "vitest run",
+    "dev:api": "go -C backend run ./cmd/faultline",
+    "test:api": "go -C backend test ./..."
   },
   "dependencies": {
     "@xyflow/react": "12.11.2",

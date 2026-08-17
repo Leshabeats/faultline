@@ -44,6 +44,12 @@ export const applicationCopy = {
     answerReviewed: 'Answer reviewed',
     focus: 'Focus',
     designReady: 'Design ready to defend',
+    replayPublished: 'Replay published',
+    publicLinkReady: 'Anyone with the link can replay this attempt',
+    publishFailed: 'Could not publish replay',
+    publishUnavailable: 'The replay service is unavailable. Start the local backend.',
+    replayUnpublished: 'Replay unpublished',
+    publicLinkRemoved: 'The public link no longer opens this attempt',
   },
   ru: {
     componentRemoved: 'Компонент удалён',
@@ -77,6 +83,12 @@ export const applicationCopy = {
     answerReviewed: 'Ответ разобран',
     focus: 'Фокус',
     designReady: 'Решение готово к защите',
+    replayPublished: 'Повтор опубликован',
+    publicLinkReady: 'По ссылке можно воспроизвести эту попытку',
+    publishFailed: 'Не удалось опубликовать повтор',
+    publishUnavailable: 'Сервис публичных повторов недоступен. Запустите локальный backend.',
+    replayUnpublished: 'Публикация снята',
+    publicLinkRemoved: 'Публичная ссылка больше не открывает эту попытку',
   },
 } as const
 

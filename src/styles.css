@@ -4758,3 +4758,201 @@ button:disabled {
     animation: none;
   }
 }
+
+.publish-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 140;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(18, 22, 26, 0.28);
+  backdrop-filter: blur(10px);
+}
+
+.publish-dialog {
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  padding: 28px;
+  border: 1px solid rgba(129, 144, 160, 0.22);
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: var(--shadow-lg);
+}
+
+.publish-dialog header,
+.publish-dialog footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.publish-dialog header span,
+.publish-dialog section h3,
+.publish-result label {
+  color: var(--ink-secondary);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.publish-dialog h2 {
+  margin: 4px 0 0;
+  font-size: 28px;
+  letter-spacing: -0.03em;
+}
+
+.publish-dialog header button {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #f1f3f5;
+}
+
+.publish-dialog > p,
+.publish-dialog li,
+.publish-error,
+.replay-score-disclaimer,
+.public-replay-state p {
+  color: var(--ink-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.publish-preview,
+.publish-dialog section,
+.publish-result,
+.replay-publish {
+  margin-top: 18px;
+}
+
+.publish-preview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.publish-preview > div,
+.public-replay-state {
+  padding: 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  background: #f8fafb;
+}
+
+.publish-preview strong,
+.public-replay-state strong {
+  display: block;
+  font-size: 22px;
+  letter-spacing: -0.03em;
+}
+
+.publish-preview span {
+  color: var(--ink-secondary);
+  font-size: 11px;
+}
+
+.publish-dialog section h3,
+.replay-publish button,
+.publish-dialog footer button,
+.publish-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.publish-dialog ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+
+.publish-result input {
+  width: 100%;
+  min-height: 40px;
+  margin: 8px 0;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.publish-result button,
+.publish-dialog footer button,
+.publish-open,
+.replay-publish button,
+.public-replay-state button {
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 11px;
+  color: #fff;
+  background: var(--ink);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.publish-dialog footer {
+  margin-top: 24px;
+}
+
+.publish-dialog footer .secondary,
+.publish-unpublish {
+  color: var(--ink);
+  background: #eef1f4;
+}
+
+.publish-unpublish {
+  width: 100%;
+  justify-content: center;
+  margin-top: 10px;
+}
+
+.publish-error,
+.history-notice.is-error {
+  color: #a42e22;
+}
+
+.replay-score-disclaimer,
+.replay-publish small {
+  display: block;
+  margin-top: 10px;
+  color: var(--ink-secondary);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.replay-publish button {
+  width: 100%;
+  justify-content: center;
+}
+
+.public-replay-state {
+  width: min(520px, calc(100vw - 40px));
+  margin: 12vh auto 0;
+  text-align: center;
+}
+
+.public-replay-state strong {
+  margin-bottom: 8px;
+}
+
+.public-replay-state button {
+  margin-top: 16px;
+}
+
+.is-spinning {
+  animation: spin 800ms linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.public-replay-page .workspace,
+.public-replay-page .canvas-region,
+.public-replay-page .flow-surface {
+  min-height: 0;
+  height: 100%;
+}

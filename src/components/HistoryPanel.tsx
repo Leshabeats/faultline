@@ -1,4 +1,4 @@
-import { Download, FileUp, History, Play, Trash2, X } from 'lucide-react'
+import { Download, FileUp, Globe, History, Play, Trash2, X } from 'lucide-react'
 import { useEffect, useRef, type ChangeEvent } from 'react'
 import type { Locale } from '../domain/system'
 
@@ -10,6 +10,7 @@ export interface HistoryAttemptItem {
   score?: number
   passed?: boolean
   keyMoment: string
+  publicUrl?: string
 }
 
 interface HistoryPanelProps {
@@ -22,6 +23,7 @@ interface HistoryPanelProps {
   onDelete: (attemptId: string) => void
   onExport: (attemptId: string) => void
   onImport: (file: File) => void
+  onPublish: (attemptId: string) => void
 }
 
 const formatDuration = (valueMs: number) => {
@@ -52,6 +54,7 @@ export function HistoryPanel({
   onDelete,
   onExport,
   onImport,
+  onPublish,
 }: HistoryPanelProps) {
   const ru = locale === 'ru'
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -153,6 +156,7 @@ export function HistoryPanel({
                       ? ru ? 'Пройдено' : 'Passed'
                       : ru ? 'Нужно улучшить' : 'Needs work'} · {formatDuration(attempt.durationMs)}</span>
                   <div>
+                    <button type="button" onClick={() => onPublish(attempt.id)} aria-label={ru ? `Опубликовать повтор «${attempt.title}»` : `Publish ${attempt.title} replay`} title={attempt.publicUrl ? (ru ? 'Управление публичной ссылкой' : 'Manage public link') : (ru ? 'Опубликовать повтор' : 'Publish replay')}><Globe size={16} /></button>
                     <button type="button" onClick={() => onExport(attempt.id)} aria-label={ru ? `Экспорт повтора «${attempt.title}»` : `Export ${attempt.title} replay`}><Download size={16} /></button>
                     <button type="button" onClick={() => onDelete(attempt.id)} aria-label={ru ? `Удалить повтор «${attempt.title}»` : `Delete ${attempt.title} replay`}><Trash2 size={16} /></button>
                     <button className="history-replay-button" type="button" onClick={() => onReplay(attempt.id)}><Play size={15} fill="currentColor" /> {ru ? 'Повтор' : 'Replay'}</button>
