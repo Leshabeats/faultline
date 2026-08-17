@@ -3,7 +3,7 @@ import { applyEdgeChanges, applyNodeChanges, type EdgeChange, type NodeChange } 
 import { ArchitectureCanvas } from '../canvas/ArchitectureCanvas'
 import type { SystemFlowEdge, SystemFlowNode } from '../canvas/types'
 import { ReplayPanel } from './ReplayPanel'
-import { PublicReplayState } from './PublicReplayState'
+import { PublicReplayState, publicReplayStateCopy } from './PublicReplayState'
 import { ReplayTimeline } from './ReplayTimeline'
 import { TopBar } from './TopBar'
 import { getChallengePack } from '../challenges/registry'
@@ -365,13 +365,7 @@ export function PublicReplayPage({
           ? ru
             ? `Публичный повтор ${playing ? 'воспроизводится' : 'приостановлен'}.`
             : `Public replay ${playing ? 'playing' : 'paused'}.`
-          : status === 'loading'
-            ? ru ? 'Загружаем публичный повтор.' : 'Loading public replay.'
-            : (error?.code === 'not-found'
-              ? ru ? 'Публичный повтор не найден.' : 'Public replay was not found.'
-              : error?.code === 'unsupported-version'
-                ? ru ? 'Версия публичного повтора не поддерживается.' : 'This public replay version is not supported.'
-                : ru ? 'Сервис публичных повторов недоступен.' : 'The replay service is unavailable.'))}
+          : publicReplayStateCopy(locale, status === 'error' ? 'error' : 'loading', error).detail)}
       </div>
     </div>
   )

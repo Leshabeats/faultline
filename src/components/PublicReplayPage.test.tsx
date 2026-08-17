@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
-import { PublicReplayState } from './PublicReplayState'
+import { PublicReplayState, publicReplayStateCopy } from './PublicReplayState'
 
 describe('public replay states', () => {
   it('renders a Russian not-found page', () => {
@@ -41,5 +41,9 @@ describe('public replay states', () => {
     )
     expect(html).toContain('Too many requests')
     expect(html).not.toContain('Start the local backend')
+    expect(publicReplayStateCopy('en', 'error', { code: 'rate-limited', message: 'slow down' }).detail)
+      .toContain('rate-limited')
+    expect(publicReplayStateCopy('en', 'error', { code: 'rate-limited', message: 'slow down' }).detail)
+      .not.toContain('unavailable')
   })
 })
