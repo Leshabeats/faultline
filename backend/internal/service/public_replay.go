@@ -10,17 +10,21 @@ import (
 	"time"
 
 	"github.com/Leshabeats/faultline/backend/internal/replay"
-	"github.com/Leshabeats/faultline/backend/internal/repository"
+	"github.com/Leshabeats/faultline/backend/internal/replaystore"
 )
 
 type PublicReplayService struct {
-	repo            *repository.PublicReplayRepository
+	store           replaystore.Store
 	publicShareBase string
 	maxRecords      int
 	maxBytes        int64
 }
 
-var ErrStorageQuota = errors.New("public replay storage quota exceeded")
+var (
+	ErrNotFound     = replaystore.ErrNotFound
+	ErrForbidden    = replaystore.ErrForbidden
+	ErrStorageQuota = replaystore.ErrStorageQuota
+)
 
 type PublishResult struct {
 	ID          string `json:"id"`
@@ -35,9 +39,9 @@ type PublicReplayView struct {
 	Envelope  json.RawMessage `json:"envelope"`
 }
 
-func NewPublicReplayService(repo *repository.PublicReplayRepository, publicShareBase string, maxRecords int, maxBytes int64) *PublicReplayService {
+func NewPublicReplayService(store replaystore.Store, publicShareBase string, maxRecords int, maxBytes int64) *PublicReplayService {
 	return &PublicReplayService{
-		repo:            repo,
+		store:           store,
 		publicShareBase: strings.TrimRight(publicShareBase, "/"),
 		maxRecords:      maxRecords,
 		maxBytes:        maxBytes,
@@ -62,16 +66,18 @@ func (s *PublicReplayService) Publish(raw []byte) (PublishResult, error) {
 		return PublishResult{}, err
 	}
 	createdAt := time.Now().UTC()
-	record := repository.PublicReplayRecord{
+	record := replaystore.Record{
 		ID:              id,
 		CreatedAt:       createdAt,
 		EnvelopeJSON:    canonical,
-		DeleteTokenHash: repository.HashDeleteToken(deleteToken),
+		DeleteTokenHash: replaystore.HashDeleteToken(deleteToken),
 	}
-	if err := s.repo.InsertWithinQuota(record, s.maxRecords, s.maxBytes); err != nil {
-		if errors.Is(err, repository.ErrStorageQuota) {
-			return PublishResult{}, ErrStorageQuota
+	if err := s.store.InsertGuarded(record, func(usage replaystore.Usage) error {
+		if exceedsStorageQuota(usage, int64(len(canonical)), s.maxRecords, s.maxBytes) {
+			return ErrStorageQuota
 		}
+		return nil
+	}); err != nil {
 		return PublishResult{}, err
 	}
 	return PublishResult{
@@ -83,7 +89,7 @@ func (s *PublicReplayService) Publish(raw []byte) (PublishResult, error) {
 }
 
 func (s *PublicReplayService) Get(id string) (PublicReplayView, error) {
-	record, err := s.repo.Get(id)
+	record, err := s.store.Get(id)
 	if err != nil {
 		return PublicReplayView{}, err
 	}
@@ -96,9 +102,9 @@ func (s *PublicReplayService) Get(id string) (PublicReplayView, error) {
 
 func (s *PublicReplayService) Delete(id, deleteToken string) error {
 	if strings.TrimSpace(deleteToken) == "" {
-		return repository.ErrForbidden
+		return ErrForbidden
 	}
-	return s.repo.Delete(id, repository.HashDeleteToken(deleteToken))
+	return s.store.Delete(id, replaystore.HashDeleteToken(deleteToken))
 }
 
 func (s *PublicReplayService) PublicURL(id string) string {
@@ -114,13 +120,12 @@ func randomToken(byteLen int) (string, error) {
 }
 
 func IsNotFound(err error) bool {
-	return errors.Is(err, repository.ErrNotFound)
+	return errors.Is(err, ErrNotFound)
 }
 
 func IsForbidden(err error) bool {
-	return errors.Is(err, repository.ErrForbidden)
+	return errors.Is(err, ErrForbidden)
 }
-
 
 func IsQuotaExceeded(err error) bool {
 	return errors.Is(err, ErrStorageQuota)

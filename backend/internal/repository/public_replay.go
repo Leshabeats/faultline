@@ -1,28 +1,14 @@
 package repository
 
 import (
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
-)
 
-var (
-	ErrNotFound  = errors.New("public replay not found")
-	ErrConflict  = errors.New("public replay already exists")
-	ErrForbidden    = errors.New("delete token does not match")
-	ErrStorageQuota = errors.New("public replay storage quota exceeded")
+	"github.com/Leshabeats/faultline/backend/internal/replaystore"
 )
-
-type PublicReplayRecord struct {
-	ID              string
-	CreatedAt       time.Time
-	EnvelopeJSON    []byte
-	DeleteTokenHash string
-}
 
 type PublicReplayRepository struct {
 	db *sql.DB
@@ -32,26 +18,7 @@ func NewPublicReplayRepository(db *sql.DB) *PublicReplayRepository {
 	return &PublicReplayRepository{db: db}
 }
 
-func HashDeleteToken(token string) string {
-	sum := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(sum[:])
-}
-
-type StorageUsage struct {
-	Records int
-	Bytes   int64
-}
-
-func (r *PublicReplayRepository) Usage() (StorageUsage, error) {
-	var usage StorageUsage
-	err := r.db.QueryRow(`
-SELECT COUNT(1), COALESCE(SUM(LENGTH(envelope_json)), 0)
-FROM public_replays
-`).Scan(&usage.Records, &usage.Bytes)
-	return usage, err
-}
-
-func (r *PublicReplayRepository) InsertWithinQuota(record PublicReplayRecord, maxRecords int, maxBytes int64) error {
+func (r *PublicReplayRepository) InsertGuarded(record replaystore.Record, guard func(replaystore.Usage) error) error {
 	tx, err := r.db.Begin()
 	if err != nil {
 		return err
@@ -66,18 +33,17 @@ func (r *PublicReplayRepository) InsertWithinQuota(record PublicReplayRecord, ma
 	if _, err := tx.Exec(`UPDATE public_replay_quota_lock SET id = 1 WHERE id = 1`); err != nil {
 		return err
 	}
-	var usage StorageUsage
+	var usage replaystore.Usage
 	if err := tx.QueryRow(`
 SELECT COUNT(1), COALESCE(SUM(LENGTH(envelope_json)), 0)
 FROM public_replays
 `).Scan(&usage.Records, &usage.Bytes); err != nil {
 		return err
 	}
-	if maxRecords > 0 && usage.Records+1 > maxRecords {
-		return ErrStorageQuota
-	}
-	if maxBytes > 0 && usage.Bytes+int64(len(record.EnvelopeJSON)) > maxBytes {
-		return ErrStorageQuota
+	if guard != nil {
+		if err := guard(usage); err != nil {
+			return err
+		}
 	}
 	if _, err := tx.Exec(
 		`INSERT INTO public_replays (id, created_at, envelope_json, delete_token_hash) VALUES (?, ?, ?, ?)`,
@@ -87,19 +53,15 @@ FROM public_replays
 		record.DeleteTokenHash,
 	); err != nil {
 		if strings.Contains(strings.ToUpper(err.Error()), "UNIQUE") {
-			return ErrConflict
+			return replaystore.ErrConflict
 		}
 		return fmt.Errorf("insert public replay: %w", err)
 	}
 	return tx.Commit()
 }
 
-func (r *PublicReplayRepository) Insert(record PublicReplayRecord) error {
-	return r.InsertWithinQuota(record, 0, 0)
-}
-
-func (r *PublicReplayRepository) Get(id string) (PublicReplayRecord, error) {
-	var record PublicReplayRecord
+func (r *PublicReplayRepository) Get(id string) (replaystore.Record, error) {
+	var record replaystore.Record
 	var createdAt string
 	var envelope string
 	err := r.db.QueryRow(
@@ -107,16 +69,16 @@ func (r *PublicReplayRepository) Get(id string) (PublicReplayRecord, error) {
 		id,
 	).Scan(&record.ID, &createdAt, &envelope, &record.DeleteTokenHash)
 	if errors.Is(err, sql.ErrNoRows) {
-		return PublicReplayRecord{}, ErrNotFound
+		return replaystore.Record{}, replaystore.ErrNotFound
 	}
 	if err != nil {
-		return PublicReplayRecord{}, err
+		return replaystore.Record{}, err
 	}
 	parsed, err := time.Parse(time.RFC3339Nano, createdAt)
 	if err != nil {
 		parsed, err = time.Parse(time.RFC3339, createdAt)
 		if err != nil {
-			return PublicReplayRecord{}, err
+			return replaystore.Record{}, err
 		}
 	}
 	record.CreatedAt = parsed
@@ -138,10 +100,10 @@ func (r *PublicReplayRepository) Delete(id, deleteTokenHash string) error {
 		return err
 	}
 	if affected == 0 {
-		if _, getErr := r.Get(id); errors.Is(getErr, ErrNotFound) {
-			return ErrNotFound
+		if _, getErr := r.Get(id); errors.Is(getErr, replaystore.ErrNotFound) {
+			return replaystore.ErrNotFound
 		}
-		return ErrForbidden
+		return replaystore.ErrForbidden
 	}
 	return nil
 }

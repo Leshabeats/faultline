@@ -42,3 +42,11 @@ This image is ready for local or self-hosted use. A public production host and c
 - `DELETE /api/public-replays/{id}` with `X-Faultline-Delete-Token`
 
 The service stores the published payload as an immutable record. Score verification stays in the TypeScript judge.
+
+## Layers
+
+- `internal/httpapi`: Chi transport, CORS, body/rate limits, status mapping.
+- `internal/service`: publish/get/delete workflow, IDs, delete tokens, storage quota policy.
+- `internal/replay`: public envelope and event invariants, independent of HTTP and SQLite.
+- `internal/replaystore`: persistence port and shared store errors.
+- `internal/repository`: SQLite adapter that executes guarded inserts without choosing quota limits.
