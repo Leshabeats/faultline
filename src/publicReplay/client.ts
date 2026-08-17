@@ -114,12 +114,12 @@ export class FetchPublicReplayClient implements PublicReplayClient {
 
   private async request(path: string, init?: RequestInit) {
     const url = `${this.apiBase}${path}`
-    try {
-      if (typeof fetch === 'function') {
+    if (typeof fetch === 'function') {
+      try {
         return await fetch(url, init)
+      } catch {
+        throw asError('unavailable', 'The replay service is unavailable.')
       }
-    } catch {
-      // Some embedded browsers expose a non-functional fetch.
     }
     try {
       return await xhrRequest(url, init)

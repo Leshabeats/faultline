@@ -61,4 +61,45 @@ describe('FetchPublicReplayClient', () => {
     const client = new FetchPublicReplayClient('http://127.0.0.1:8787')
     await expect(client.get('missing-id-12345678')).rejects.toMatchObject({ code: 'not-found' })
   })
+
+  it('does not fall back to XHR after an in-flight fetch failure', async () => {
+    const fetchMock = vi.fn(async () => {
+      throw new TypeError('network lost after the request left the browser')
+    })
+    const xhrMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    vi.stubGlobal('XMLHttpRequest', xhrMock)
+
+    const client = new FetchPublicReplayClient('http://127.0.0.1:8787')
+    await expect(client.publish(envelope as never)).rejects.toMatchObject({ code: 'unavailable' })
+    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(xhrMock).not.toHaveBeenCalled()
+  })
+
+  it('uses XHR only when fetch is unavailable', async () => {
+    class FakeXHR {
+      status = 201
+      statusText = 'Created'
+      responseText = JSON.stringify({
+        id: 'pub-xhr',
+        url: 'http://127.0.0.1:4173/#/r/pub-xhr',
+        deleteToken: 'token',
+      })
+      onload: (() => void) | null = null
+      onerror: (() => void) | null = null
+      open() {}
+      setRequestHeader() {}
+      getResponseHeader() { return 'application/json' }
+      send() { this.onload?.() }
+    }
+    vi.stubGlobal('fetch', undefined)
+    vi.stubGlobal('XMLHttpRequest', vi.fn(() => new FakeXHR()))
+
+    const client = new FetchPublicReplayClient('http://127.0.0.1:8787')
+    await expect(client.publish(envelope as never)).resolves.toMatchObject({
+      id: 'pub-xhr',
+      deleteToken: 'token',
+    })
+    expect(XMLHttpRequest).toHaveBeenCalledOnce()
+  })
 })

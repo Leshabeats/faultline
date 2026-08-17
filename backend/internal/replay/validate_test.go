@@ -108,3 +108,38 @@ func TestParseAndValidatePublicRejectsOversizedPayload(t *testing.T) {
 		t.Fatalf("expected too-large, got %#v", err)
 	}
 }
+
+func TestParseAndValidatePublicRejectsInvalidLoadPayload(t *testing.T) {
+	raw := strings.ReplaceAll(validEnvelope(), `{"load": 10}`, `{"load":2}`)
+	_, _, err := ParseAndValidatePublic([]byte(raw))
+	if err == nil {
+		t.Fatal("expected invalid-replay for load=2")
+	}
+	replayErr, ok := err.(*Error)
+	if !ok || replayErr.Code != "invalid-replay" {
+		t.Fatalf("expected invalid-replay, got %#v", err)
+	}
+}
+
+func TestParseAndValidatePublicAcceptsValidLoadPayload(t *testing.T) {
+	if _, _, err := ParseAndValidatePublic([]byte(validEnvelope())); err != nil {
+		t.Fatalf("expected valid load=10 envelope, got %v", err)
+	}
+}
+
+func TestParseAndValidatePublicRejectsAnswerFocusAndTimeline(t *testing.T) {
+	raw := strings.ReplaceAll(
+		validEnvelope(),
+		`"payload": {"answer": "[redacted]"}`,
+		`"timeline": {"title": "Predicted cache", "detail": "Prediction holds", "tone": "healthy"}, "payload": {"answer": "[redacted]", "focus": "prediction:cache"}`,
+	)
+	_, _, err := ParseAndValidatePublic([]byte(raw))
+	if err == nil {
+		t.Fatal("expected private-content for leftover answer metadata")
+	}
+	replayErr, ok := err.(*Error)
+	if !ok || replayErr.Code != "private-content" {
+		t.Fatalf("expected private-content, got %#v", err)
+	}
+}
+

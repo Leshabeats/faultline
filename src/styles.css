@@ -4914,6 +4914,10 @@ button:disabled {
   color: #a42e22;
 }
 
+.publish-warning {
+  color: #8a5a12;
+}
+
 .replay-score-disclaimer,
 .replay-publish small {
   display: block;

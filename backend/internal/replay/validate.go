@@ -263,33 +263,99 @@ func validateEvent(event ReplayEvent) error {
 	if !containsString([]string{"user", "system", "interviewer"}, event.Source) {
 		return invalidReplay()
 	}
+	if event.Timeline != nil {
+		if event.Type == "answer.submitted" {
+			return privateContent()
+		}
+		if err := validateTimeline(event.Timeline); err != nil {
+			return err
+		}
+	}
+	object, err := decodeObject(event.Payload)
+	if err != nil {
+		return invalidReplay()
+	}
 	switch event.Type {
+	case "load.changed":
+		if !hasOnlyKeys(object, "load") || !isLoad(object["load"]) {
+			return invalidReplay()
+		}
+	case "fault.changed":
+		if err := validateFaultPayload(object); err != nil {
+			return err
+		}
+	case "capacity.changed":
+		if err := validateCapacityPayload(object); err != nil {
+			return err
+		}
+	case "node.added":
+		if !hasOnlyKeys(object, "node") || !isNode(object["node"]) {
+			return invalidReplay()
+		}
+	case "node.updated":
+		if err := validateNodeUpdated(object); err != nil {
+			return err
+		}
+	case "node.removed":
+		if !hasOnlyKeys(object, "nodeId") || !isBoundedValue(object["nodeId"]) {
+			return invalidReplay()
+		}
+	case "edge.added":
+		if !hasOnlyKeys(object, "edge") || !isEdge(object["edge"]) {
+			return invalidReplay()
+		}
+	case "edge.updated":
+		if err := validateEdgeUpdated(object); err != nil {
+			return err
+		}
+	case "edge.removed":
+		if !hasOnlyKeys(object, "edgeId") || !isBoundedValue(object["edgeId"]) {
+			return invalidReplay()
+		}
+	case "architecture.replaced":
+		if !hasOnlyKeys(object, "architecture") {
+			return invalidReplay()
+		}
+		architecture, err := decodeArchitecture(object["architecture"])
+		if err != nil {
+			return invalidReplay()
+		}
+		if err := validateArchitecture(architecture); err != nil {
+			return err
+		}
 	case "answer.submitted":
-		var payload struct {
-			Answer   string  `json:"answer"`
-			Prompt   *string `json:"prompt"`
-			Feedback *string `json:"feedback"`
-			Focus    *string `json:"focus"`
+		if err := validateAnswerPayload(object); err != nil {
+			return err
 		}
-		if err := json.Unmarshal(event.Payload, &payload); err != nil {
-			return invalidReplay()
-		}
-		if !boundedAllowEmpty(payload.Answer) {
-			return invalidReplay()
-		}
-		if payload.Answer != RedactedAnswer {
-			return &Error{Code: "private-content", Message: "Public replay still contains interviewer answers."}
-		}
-		if payload.Prompt != nil || payload.Feedback != nil {
-			return &Error{Code: "private-content", Message: "Public replay still contains interviewer answers."}
-		}
-	case "load.changed", "fault.changed", "capacity.changed", "node.added", "node.updated", "node.removed",
-		"edge.added", "edge.updated", "edge.removed", "architecture.replaced", "design.submitted":
-		if len(event.Payload) == 0 {
+	case "design.submitted":
+		if !hasOnlyKeys(object, "submission") || !isSubmission(object["submission"]) {
 			return invalidReplay()
 		}
 	default:
 		return invalidReplay()
+	}
+	return nil
+}
+
+func validateAnswerPayload(object map[string]any) error {
+	if !hasOnlyKeys(object, "answer", "prompt", "feedback", "focus") {
+		return invalidReplay()
+	}
+	answer, ok := object["answer"].(string)
+	if !ok || !boundedAllowEmpty(answer) {
+		return invalidReplay()
+	}
+	if answer != RedactedAnswer {
+		return privateContent()
+	}
+	if _, exists := object["prompt"]; exists {
+		return privateContent()
+	}
+	if _, exists := object["feedback"]; exists {
+		return privateContent()
+	}
+	if _, exists := object["focus"]; exists {
+		return privateContent()
 	}
 	return nil
 }
@@ -299,19 +365,396 @@ func hasPrivateInterviewContent(attempt ReplayAttempt) bool {
 		if event.Type != "answer.submitted" {
 			continue
 		}
-		var payload struct {
-			Answer   string  `json:"answer"`
-			Prompt   *string `json:"prompt"`
-			Feedback *string `json:"feedback"`
-		}
-		if json.Unmarshal(event.Payload, &payload) != nil {
+		if event.Timeline != nil {
 			return true
 		}
-		if payload.Answer != RedactedAnswer || payload.Prompt != nil || payload.Feedback != nil {
+		object, err := decodeObject(event.Payload)
+		if err != nil {
+			return true
+		}
+		if validateAnswerPayload(object) != nil {
 			return true
 		}
 	}
 	return false
+}
+
+func validateTimeline(raw json.RawMessage) error {
+	object, err := decodeObject(raw)
+	if err != nil || !hasOnlyKeys(object, "title", "detail", "tone") {
+		return invalidReplay()
+	}
+	title, titleOK := object["title"].(string)
+	detail, detailOK := object["detail"].(string)
+	tone, toneOK := object["tone"].(string)
+	if !titleOK || !bounded(title) || !detailOK || !boundedAllowEmpty(detail) {
+		return invalidReplay()
+	}
+	if !toneOK || !containsString([]string{"neutral", "healthy", "warning", "critical"}, tone) {
+		return invalidReplay()
+	}
+	return nil
+}
+
+func validateFaultPayload(object map[string]any) error {
+	if !hasOnlyKeys(object, "fault", "targetNodeId", "targetEdgeId") {
+		return invalidReplay()
+	}
+	fault, ok := object["fault"].(string)
+	if !ok || !isFault(fault) {
+		return invalidReplay()
+	}
+	nodeID, hasNode := object["targetNodeId"]
+	edgeID, hasEdge := object["targetEdgeId"]
+	if hasNode && hasEdge {
+		return invalidReplay()
+	}
+	if hasNode && !isBoundedValue(nodeID) {
+		return invalidReplay()
+	}
+	if hasEdge && !isBoundedValue(edgeID) {
+		return invalidReplay()
+	}
+	if fault == "component-outage" && !hasNode {
+		return invalidReplay()
+	}
+	if hasNode && fault != "component-outage" {
+		return invalidReplay()
+	}
+	if hasEdge && fault != "network-partition" {
+		return invalidReplay()
+	}
+	return nil
+}
+
+func validateCapacityPayload(object map[string]any) error {
+	if !hasOnlyKeys(object, "capacity", "topology") || !isCapacityTuning(object["capacity"]) {
+		return invalidReplay()
+	}
+	if _, exists := object["topology"]; !exists {
+		return nil
+	}
+	raw, ok := object["topology"].([]any)
+	if !ok || len(raw) > MaxNodes {
+		return invalidReplay()
+	}
+	seen := map[string]struct{}{}
+	for _, item := range raw {
+		patch, ok := item.(map[string]any)
+		if !ok || !hasOnlyKeys(patch, "nodeId", "replicas", "shards") {
+			return invalidReplay()
+		}
+		nodeID, ok := patch["nodeId"].(string)
+		if !ok || !bounded(nodeID) {
+			return invalidReplay()
+		}
+		replicas, ok := asInt(patch["replicas"])
+		if !ok || replicas < 1 || replicas > 16 {
+			return invalidReplay()
+		}
+		shards, ok := asInt(patch["shards"])
+		if !ok || shards < 1 || shards > 64 {
+			return invalidReplay()
+		}
+		if _, exists := seen[nodeID]; exists {
+			return invalidReplay()
+		}
+		seen[nodeID] = struct{}{}
+	}
+	return nil
+}
+
+func validateNodeUpdated(object map[string]any) error {
+	if !hasOnlyKeys(object, "nodeId", "patch") || !isBoundedValue(object["nodeId"]) {
+		return invalidReplay()
+	}
+	patch, ok := object["patch"].(map[string]any)
+	if !ok || !hasOnlyKeys(patch, "position", "data") {
+		return invalidReplay()
+	}
+	if position, exists := patch["position"]; exists && !isPosition(position) {
+		return invalidReplay()
+	}
+	if data, exists := patch["data"]; exists && !isPartialNodeData(data) {
+		return invalidReplay()
+	}
+	return nil
+}
+
+func validateEdgeUpdated(object map[string]any) error {
+	if !hasOnlyKeys(object, "edgeId", "patch") || !isBoundedValue(object["edgeId"]) {
+		return invalidReplay()
+	}
+	patch, ok := object["patch"].(map[string]any)
+	if !ok || !hasOnlyKeys(patch, "source", "target", "sourceHandle", "targetHandle") {
+		return invalidReplay()
+	}
+	if source, exists := patch["source"]; exists && !isBoundedValue(source) {
+		return invalidReplay()
+	}
+	if target, exists := patch["target"]; exists && !isBoundedValue(target) {
+		return invalidReplay()
+	}
+	if !isHandle(patch["sourceHandle"]) || !isHandle(patch["targetHandle"]) {
+		return invalidReplay()
+	}
+	return nil
+}
+
+func decodeArchitecture(value any) (ReplayArchitecture, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return ReplayArchitecture{}, err
+	}
+	var architecture ReplayArchitecture
+	if err := json.Unmarshal(raw, &architecture); err != nil {
+		return ReplayArchitecture{}, err
+	}
+	return architecture, nil
+}
+
+func decodeObject(raw json.RawMessage) (map[string]any, error) {
+	if len(raw) == 0 {
+		return nil, invalidReplay()
+	}
+	var object map[string]any
+	if err := json.Unmarshal(raw, &object); err != nil || object == nil {
+		return nil, invalidReplay()
+	}
+	return object, nil
+}
+
+func hasOnlyKeys(object map[string]any, allowed ...string) bool {
+	allowedSet := map[string]struct{}{}
+	for _, key := range allowed {
+		allowedSet[key] = struct{}{}
+	}
+	for key := range object {
+		if _, ok := allowedSet[key]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func isLoad(value any) bool {
+	load, ok := asInt(value)
+	return ok && contains([]int{1, 3, 10}, load)
+}
+
+func isNode(value any) bool {
+	node, ok := value.(map[string]any)
+	if !ok || !hasOnlyKeys(node, "id", "type", "position", "data") {
+		return false
+	}
+	id, _ := node["id"].(string)
+	kind, _ := node["type"].(string)
+	return bounded(id) && kind == "system" && isPosition(node["position"]) && isNodeData(node["data"])
+}
+
+func isNodeData(value any) bool {
+	data, ok := value.(map[string]any)
+	if !ok || !hasOnlyKeys(data, "kind", "label", "replicas", "shards") {
+		return false
+	}
+	kind, _ := data["kind"].(string)
+	label, _ := data["label"].(string)
+	if !isComponentKind(kind) || !bounded(label) {
+		return false
+	}
+	if replicas, exists := data["replicas"]; exists && !isReplicaCount(replicas) {
+		return false
+	}
+	if shards, exists := data["shards"]; exists && !isShardCount(shards) {
+		return false
+	}
+	return true
+}
+
+func isPartialNodeData(value any) bool {
+	data, ok := value.(map[string]any)
+	if !ok || !hasOnlyKeys(data, "kind", "label", "replicas", "shards") {
+		return false
+	}
+	if kind, exists := data["kind"]; exists {
+		asString, ok := kind.(string)
+		if !ok || !isComponentKind(asString) {
+			return false
+		}
+	}
+	if label, exists := data["label"]; exists && !isBoundedValue(label) {
+		return false
+	}
+	if replicas, exists := data["replicas"]; exists && !isReplicaCount(replicas) {
+		return false
+	}
+	if shards, exists := data["shards"]; exists && !isShardCount(shards) {
+		return false
+	}
+	return true
+}
+
+func isEdge(value any) bool {
+	edge, ok := value.(map[string]any)
+	if !ok || !hasOnlyKeys(edge, "id", "type", "source", "target", "sourceHandle", "targetHandle") {
+		return false
+	}
+	id, _ := edge["id"].(string)
+	kind, _ := edge["type"].(string)
+	source, _ := edge["source"].(string)
+	target, _ := edge["target"].(string)
+	return bounded(id) && kind == "traffic" && bounded(source) && bounded(target) && isHandle(edge["sourceHandle"]) && isHandle(edge["targetHandle"])
+}
+
+func isPosition(value any) bool {
+	position, ok := value.(map[string]any)
+	if !ok || !hasOnlyKeys(position, "x", "y") {
+		return false
+	}
+	_, xOK := asNumber(position["x"])
+	_, yOK := asNumber(position["y"])
+	return xOK && yOK
+}
+
+func isHandle(value any) bool {
+	if value == nil {
+		return true
+	}
+	text, ok := value.(string)
+	return ok && boundedAllowEmpty(text)
+}
+
+func isCapacityTuning(value any) bool {
+	tuning, ok := value.(map[string]any)
+	if !ok || !hasOnlyKeys(tuning,
+		"cacheHitRate", "indexedLookup", "poolSize", "readReplicas", "databaseProfile",
+		"pricingPackId", "benchmarkPackId", "fanoutStrategy", "fanoutWorkers", "fanoutBatchSize",
+		"celebrityThreshold", "deduplication",
+	) {
+		return false
+	}
+	hitRate, ok := asNumber(tuning["cacheHitRate"])
+	if !ok || !containsFloat([]float64{0.9, 0.95, 0.99}, hitRate) {
+		return false
+	}
+	indexed, ok := tuning["indexedLookup"].(bool)
+	if !ok {
+		return false
+	}
+	_ = indexed
+	poolSize, ok := asInt(tuning["poolSize"])
+	if !ok || !contains([]int{100, 300, 600}, poolSize) {
+		return false
+	}
+	replicas, ok := asInt(tuning["readReplicas"])
+	if !ok || !contains([]int{0, 1, 2}, replicas) {
+		return false
+	}
+	profile, ok := tuning["databaseProfile"].(string)
+	if !ok || !containsString([]string{"compact", "balanced", "performance"}, profile) {
+		return false
+	}
+	if pack, exists := tuning["pricingPackId"]; exists && !containsString([]string{"reference-2026.08", "aws-us-east-1-2026.07"}, asString(pack)) {
+		return false
+	}
+	if pack, exists := tuning["benchmarkPackId"]; exists && !containsString([]string{"reference-2026.08", "local-m1-pro-2026.08"}, asString(pack)) {
+		return false
+	}
+	if strategy, exists := tuning["fanoutStrategy"]; exists && !containsString([]string{"write", "read", "hybrid"}, asString(strategy)) {
+		return false
+	}
+	if workers, exists := tuning["fanoutWorkers"]; exists {
+		value, ok := asInt(workers)
+		if !ok || !contains([]int{4, 16, 64}, value) {
+			return false
+		}
+	}
+	if batch, exists := tuning["fanoutBatchSize"]; exists {
+		value, ok := asInt(batch)
+		if !ok || !contains([]int{100, 500, 2000}, value) {
+			return false
+		}
+	}
+	if threshold, exists := tuning["celebrityThreshold"]; exists {
+		value, ok := asInt(threshold)
+		if !ok || !contains([]int{100000, 1000000, 10000000}, value) {
+			return false
+		}
+	}
+	if dedup, exists := tuning["deduplication"]; exists {
+		if _, ok := dedup.(bool); !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func isSubmission(value any) bool {
+	submission, ok := value.(map[string]any)
+	if !ok || !hasOnlyKeys(submission, "judgeVersion", "score", "maxScore", "passed", "passedCases", "totalCases") {
+		return false
+	}
+	version, ok := submission["judgeVersion"].(string)
+	if !ok || !bounded(version) {
+		return false
+	}
+	score, ok := asInt(submission["score"])
+	maxScore, maxOK := asInt(submission["maxScore"])
+	passed, passedOK := submission["passed"].(bool)
+	passedCases, casesOK := asInt(submission["passedCases"])
+	totalCases, totalOK := asInt(submission["totalCases"])
+	_ = passed
+	return ok && maxOK && passedOK && casesOK && totalOK &&
+		score >= 0 && maxScore >= 0 && score <= maxScore &&
+		passedCases >= 0 && totalCases >= 0 && passedCases <= totalCases
+}
+
+func isComponentKind(value string) bool {
+	return containsString([]string{"client", "gateway", "service", "cache", "queue", "database", "region"}, value)
+}
+
+func isReplicaCount(value any) bool {
+	count, ok := asInt(value)
+	return ok && count >= 1 && count <= 16
+}
+
+func isShardCount(value any) bool {
+	count, ok := asInt(value)
+	return ok && count >= 1 && count <= 64
+}
+
+func isBoundedValue(value any) bool {
+	text, ok := value.(string)
+	return ok && bounded(text)
+}
+
+func asString(value any) string {
+	text, _ := value.(string)
+	return text
+}
+
+func asNumber(value any) (float64, bool) {
+	switch typed := value.(type) {
+	case float64:
+		return typed, true
+	case int:
+		return float64(typed), true
+	default:
+		return 0, false
+	}
+}
+
+func containsFloat(values []float64, wanted float64) bool {
+	for _, value := range values {
+		if value == wanted {
+			return true
+		}
+	}
+	return false
+}
+
+func privateContent() *Error {
+	return &Error{Code: "private-content", Message: "Public replay still contains interviewer answers."}
 }
 
 func decodeExact(raw []byte, dest any) error {

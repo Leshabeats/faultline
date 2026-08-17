@@ -25,4 +25,26 @@ describe('public replay capability store', () => {
     store.remove('pub-1')
     expect(store.getByAttemptId('attempt-1')).toBeUndefined()
   })
+
+  it('keeps the delete token in memory when persistence fails', () => {
+    const store = new PublicReplayCapabilityStore({
+      getItem: () => null,
+      setItem: () => {
+        throw new Error('quota exceeded')
+      },
+      removeItem: () => undefined,
+    })
+
+    const persisted = store.save({
+      publicId: 'pub-2',
+      attemptId: 'attempt-2',
+      url: 'http://127.0.0.1:4173/#/r/pub-2',
+      deleteToken: 'session-only-token',
+      publishedAt: '2026-08-17T10:00:00.000Z',
+    })
+
+    expect(persisted).toBe(false)
+    expect(store.getByAttemptId('attempt-2')?.deleteToken).toBe('session-only-token')
+    expect(store.getByPublicId('pub-2')?.url).toContain('#/r/pub-2')
+  })
 })

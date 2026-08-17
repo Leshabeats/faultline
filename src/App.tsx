@@ -93,6 +93,7 @@ import {
   createPublicReplayEnvelope,
   previewPublicReplay,
   publicReplayHref,
+  resolvePublishAttempt,
   type PublicReplayError,
 } from './publicReplay'
 
@@ -174,6 +175,7 @@ export function App() {
   const [publishUrl, setPublishUrl] = useState<string>()
   const [publishError, setPublishError] = useState<string>()
   const [publishCopied, setPublishCopied] = useState(false)
+  const [lastSubmittedAttempt, setLastSubmittedAttempt] = useState<ReplayAttemptV1 | null>(null)
   const [savedAttempts, setSavedAttempts] = useState<ReplayAttemptV1[]>(() => {
     try {
       return replayRepository.list()
@@ -726,6 +728,7 @@ export function App() {
     setChallengeOpen(true)
     setHistoryOpen(false)
     setJudgeReport(null)
+    setLastSubmittedAttempt(null)
     setBottleneckPrediction(null)
     setPredictionRationale('')
     setPredictionLocked(false)
@@ -952,6 +955,7 @@ export function App() {
         } : fallbackKeyMoment(locale, recorded.initial.fault, recorded.durationMs),
       },
     }
+    setLastSubmittedAttempt(completed)
     try {
       replayRepository.save(completed)
       setSavedAttempts(replayRepository.list())
@@ -1091,8 +1095,11 @@ export function App() {
   }, [locale])
 
   const openPublish = useCallback((attemptId: string) => {
-    const attempt = savedAttempts.find((candidate) => candidate.id === attemptId)
-      ?? (replayAttempt?.id === attemptId ? replayAttempt : null)
+    const attempt = resolvePublishAttempt(attemptId, [
+      lastSubmittedAttempt,
+      replayAttempt,
+      ...savedAttempts,
+    ])
     if (!attempt) return
     const existing = capabilityStore.getByAttemptId(attempt.id)
     setPublishAttempt(attempt)
@@ -1100,7 +1107,7 @@ export function App() {
     setPublishUrl(existing?.url)
     setPublishError(undefined)
     setPublishCopied(false)
-  }, [capabilityStore, replayAttempt, savedAttempts])
+  }, [capabilityStore, lastSubmittedAttempt, replayAttempt, savedAttempts])
 
   const confirmPublish = useCallback(async () => {
     if (!publishAttempt) return
@@ -1109,7 +1116,7 @@ export function App() {
     try {
       const result = await publicReplayClient.publish(createPublicReplayEnvelope(publishAttempt))
       const url = result.url || publicReplayHref(result.id)
-      capabilityStore.save({
+      const persisted = capabilityStore.save({
         publicId: result.id,
         attemptId: publishAttempt.id,
         url,
@@ -1119,16 +1126,30 @@ export function App() {
       setCapabilitiesVersion((value) => value + 1)
       setPublishUrl(url)
       setPublishStatus('ready')
-      addEvent(copy.replayPublished, copy.publicLinkReady, 'healthy', {
-        en: {
-          title: applicationCopy.en.replayPublished,
-          detail: applicationCopy.en.publicLinkReady,
-        },
-        ru: {
-          title: applicationCopy.ru.replayPublished,
-          detail: applicationCopy.ru.publicLinkReady,
-        },
-      })
+      if (persisted) {
+        addEvent(copy.replayPublished, copy.publicLinkReady, 'healthy', {
+          en: {
+            title: applicationCopy.en.replayPublished,
+            detail: applicationCopy.en.publicLinkReady,
+          },
+          ru: {
+            title: applicationCopy.ru.replayPublished,
+            detail: applicationCopy.ru.publicLinkReady,
+          },
+        })
+      } else {
+        setPublishError(`${copy.capabilityNotSaved}. ${copy.capabilityNotSavedDetail}`)
+        addEvent(copy.capabilityNotSaved, copy.capabilityNotSavedDetail, 'warning', {
+          en: {
+            title: applicationCopy.en.capabilityNotSaved,
+            detail: applicationCopy.en.capabilityNotSavedDetail,
+          },
+          ru: {
+            title: applicationCopy.ru.capabilityNotSaved,
+            detail: applicationCopy.ru.capabilityNotSavedDetail,
+          },
+        })
+      }
     } catch (caught) {
       const error = caught as PublicReplayError
       const message = publishErrorCopy({
@@ -1142,6 +1163,8 @@ export function App() {
   }, [
     addEvent,
     capabilityStore,
+    copy.capabilityNotSaved,
+    copy.capabilityNotSavedDetail,
     copy.publicLinkReady,
     copy.publishFailed,
     copy.publishUnavailable,
@@ -1522,7 +1545,7 @@ export function App() {
         }}
         report={judgeReport}
         onSubmitDesign={submitDesign}
-        onPublishReplay={savedAttempts[0] ? () => openPublish(savedAttempts[0].id) : undefined}
+        onPublishReplay={lastSubmittedAttempt ? () => openPublish(lastSubmittedAttempt.id) : undefined}
       />
       <PublishReplayDialog
         locale={locale}

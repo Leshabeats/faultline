@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Leshabeats/faultline/backend/internal/config"
 	"github.com/Leshabeats/faultline/backend/internal/migrate"
@@ -189,3 +190,55 @@ func TestOversizedPublishIsRejected(t *testing.T) {
 		t.Fatalf("expected 413, got %d", rec.Code)
 	}
 }
+
+func TestDeleteIgnoresQueryToken(t *testing.T) {
+	handler := testHandler(t)
+
+	publishRec := httptest.NewRecorder()
+	publishReq := httptest.NewRequest(http.MethodPost, "/api/public-replays", strings.NewReader(validBody()))
+	publishReq.Header.Set("Content-Type", "application/json")
+	handler.ServeHTTP(publishRec, publishReq)
+	if publishRec.Code != http.StatusCreated {
+		t.Fatalf("publish status %d: %s", publishRec.Code, publishRec.Body.String())
+	}
+	var published struct {
+		ID          string `json:"id"`
+		DeleteToken string `json:"deleteToken"`
+	}
+	if err := json.Unmarshal(publishRec.Body.Bytes(), &published); err != nil {
+		t.Fatal(err)
+	}
+
+	queryOnly := httptest.NewRecorder()
+	queryReq := httptest.NewRequest(http.MethodDelete, "/api/public-replays/"+published.ID+"?deleteToken="+published.DeleteToken, nil)
+	handler.ServeHTTP(queryOnly, queryReq)
+	if queryOnly.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for query token, got %d", queryOnly.Code)
+	}
+
+	header := httptest.NewRecorder()
+	headerReq := httptest.NewRequest(http.MethodDelete, "/api/public-replays/"+published.ID, nil)
+	headerReq.Header.Set("X-Faultline-Delete-Token", published.DeleteToken)
+	handler.ServeHTTP(header, headerReq)
+	if header.Code != http.StatusNoContent {
+		t.Fatalf("expected 204 for header token, got %d", header.Code)
+	}
+}
+
+func TestRateLimiterEvictsExpiredKeys(t *testing.T) {
+	limiter := newRateLimiter(2, 40*time.Millisecond)
+	if !limiter.allow("203.0.113.10") {
+		t.Fatal("first request should be allowed")
+	}
+	if limiter.trackedKeys() != 1 {
+		t.Fatalf("expected one tracked key, got %d", limiter.trackedKeys())
+	}
+	time.Sleep(50 * time.Millisecond)
+	if !limiter.allow("203.0.113.11") {
+		t.Fatal("request from a new address should evict the idle key")
+	}
+	if limiter.trackedKeys() != 1 {
+		t.Fatalf("expected expired key to be evicted, tracked %d", limiter.trackedKeys())
+	}
+}
+

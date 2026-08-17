@@ -28,10 +28,15 @@ export class PublicReplayCapabilityStore {
     private readonly storage: StorageLike,
     private readonly key = DEFAULT_PUBLIC_REPLAY_CAPABILITY_KEY,
   ) {}
+  private memoryItems: StoredReplayCapability[] | null = null
 
   list(): StoredReplayCapability[] {
+    if (this.memoryItems) return this.memoryItems
     const serialized = this.storage.getItem(this.key)
-    if (!serialized) return []
+    if (!serialized) {
+      this.memoryItems = []
+      return this.memoryItems
+    }
     try {
       const parsed = JSON.parse(serialized) as unknown
       if (
@@ -40,11 +45,14 @@ export class PublicReplayCapabilityStore {
         parsed.version !== VERSION ||
         !Array.isArray(parsed.items)
       ) {
-        return []
+        this.memoryItems = []
+        return this.memoryItems
       }
-      return parsed.items.filter(isCapability).slice(0, MAX_STORED)
+      this.memoryItems = parsed.items.filter(isCapability).slice(0, MAX_STORED)
+      return this.memoryItems
     } catch {
-      return []
+      this.memoryItems = []
+      return this.memoryItems
     }
   }
 
@@ -56,32 +64,42 @@ export class PublicReplayCapabilityStore {
     return this.list().find((item) => item.attemptId === attemptId)
   }
 
-  save(capability: StoredReplayCapability) {
+  save(capability: StoredReplayCapability): boolean {
     const items = [
       capability,
       ...this.list().filter((item) => (
         item.publicId !== capability.publicId && item.attemptId !== capability.attemptId
       )),
     ].slice(0, MAX_STORED)
-    const document: CapabilityDocument = {
-      schema: SCHEMA,
-      version: VERSION,
-      items,
-    }
-    this.storage.setItem(this.key, JSON.stringify(document))
+    this.memoryItems = items
+    return this.persist(items)
   }
 
-  remove(publicId: string) {
+  remove(publicId: string): boolean {
     const items = this.list().filter((item) => item.publicId !== publicId)
+    this.memoryItems = items
     if (items.length === 0) {
-      this.storage.removeItem(this.key)
-      return
+      try {
+        this.storage.removeItem(this.key)
+        return true
+      } catch {
+        return false
+      }
     }
-    this.storage.setItem(this.key, JSON.stringify({
-      schema: SCHEMA,
-      version: VERSION,
-      items,
-    } satisfies CapabilityDocument))
+    return this.persist(items)
+  }
+
+  private persist(items: StoredReplayCapability[]): boolean {
+    try {
+      this.storage.setItem(this.key, JSON.stringify({
+        schema: SCHEMA,
+        version: VERSION,
+        items,
+      } satisfies CapabilityDocument))
+      return true
+    } catch {
+      return false
+    }
   }
 }
 

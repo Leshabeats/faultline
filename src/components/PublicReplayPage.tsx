@@ -27,10 +27,12 @@ import {
   replayTimelineEvents,
 } from '../replay/presentation'
 import { verifyImportedAttempt } from '../replay/verification'
+import { applicationCopy } from '../application/copy'
 import { initialLocale, scenarioLabels } from '../i18n'
 import {
   FetchPublicReplayClient,
   createPublicReplayCapabilityStore,
+  publicReplayShareUrl,
   type PublicReplayClient,
   type PublicReplayError,
 } from '../publicReplay'
@@ -59,6 +61,7 @@ export function PublicReplayPage({
   const [playing, setPlaying] = useState(false)
   const [speed, setSpeed] = useState(1)
   const [deleting, setDeleting] = useState(false)
+  const [shareNotice, setShareNotice] = useState<string>()
   const [canvasNodes, setCanvasNodes] = useState<SystemFlowNode[]>(emptyNodes)
   const [canvasEdges, setCanvasEdges] = useState<SystemFlowEdge[]>(emptyEdges)
   const capabilities = useMemo(() => createPublicReplayCapabilityStore(), [])
@@ -178,6 +181,20 @@ export function PublicReplayPage({
     seek(event?.atMs ?? (direction < 0 ? 0 : attempt.durationMs))
   }, [attempt, cursorMs, events, seek])
 
+  const sharePublicLink = useCallback(async () => {
+    const url = publicReplayShareUrl(
+      id,
+      typeof window === 'undefined' ? undefined : window.location.href,
+    )
+    const copy = applicationCopy[locale]
+    try {
+      await navigator.clipboard.writeText(url)
+      setShareNotice(copy.publicLinkCopied)
+    } catch {
+      setShareNotice(`${copy.shareUnavailable}. ${copy.clipboardDenied}`)
+    }
+  }, [id, locale])
+
   const deletePublication = useCallback(async () => {
     if (!owned) return
     setDeleting(true)
@@ -217,7 +234,7 @@ export function PublicReplayPage({
         onOpenCapacity={() => undefined}
         onOpenChallenge={() => undefined}
         onOpenHistory={() => { window.location.hash = '' }}
-        onShare={() => undefined}
+        onShare={() => void sharePublicLink()}
         replayMode
         replayDurationSeconds={Math.floor((attempt?.durationMs ?? 0) / 1000)}
         onExitReplay={() => { window.location.hash = '' }}
@@ -330,7 +347,7 @@ export function PublicReplayPage({
         </div>
       )}
       <div className="screen-reader-status" aria-live="polite">
-        {status === 'ready'
+        {shareNotice ?? (status === 'ready'
           ? ru
             ? `Публичный повтор ${playing ? 'воспроизводится' : 'приостановлен'}.`
             : `Public replay ${playing ? 'playing' : 'paused'}.`
@@ -340,7 +357,7 @@ export function PublicReplayPage({
               ? ru ? 'Публичный повтор не найден.' : 'Public replay was not found.'
               : error?.code === 'unsupported-version'
                 ? ru ? 'Версия публичного повтора не поддерживается.' : 'This public replay version is not supported.'
-                : ru ? 'Сервис публичных повторов недоступен.' : 'The replay service is unavailable.')}
+                : ru ? 'Сервис публичных повторов недоступен.' : 'The replay service is unavailable.'))}
       </div>
     </div>
   )

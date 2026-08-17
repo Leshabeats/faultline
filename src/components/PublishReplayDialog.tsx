@@ -38,6 +38,7 @@ const excludeCopy = (locale: Locale, key: string) => {
     'interviewer-answers': ru ? 'ответы интервьюеру' : 'interviewer answers',
     'interviewer-prompts': ru ? 'вопросы интервьюера' : 'interviewer prompts',
     'interviewer-feedback': ru ? 'разбор ответов' : 'answer feedback',
+    'answer-metadata': ru ? 'прогнозы и прочие метаданные ответов' : 'predictions and other answer metadata',
     'api-keys': ru ? 'ключи и секреты' : 'API keys and secrets',
   } as Record<string, string>)[key] ?? key
 }
@@ -153,8 +154,8 @@ export function PublishReplayDialog({
           </div>
         )}
 
-        {status === 'error' && error && (
-          <p className="publish-error" role="alert">{error}</p>
+        {error && (
+          <p className={status === 'error' ? 'publish-error' : 'publish-warning'} role="status">{error}</p>
         )}
 
         <footer>

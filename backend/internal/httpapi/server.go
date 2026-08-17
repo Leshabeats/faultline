@@ -79,9 +79,6 @@ func (s *Server) get(w http.ResponseWriter, r *http.Request) {
 func (s *Server) remove(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	token := r.Header.Get("X-Faultline-Delete-Token")
-	if token == "" {
-		token = r.URL.Query().Get("deleteToken")
-	}
 	if err := s.service.Delete(id, token); err != nil {
 		s.mapError(w, err)
 		return
@@ -236,18 +233,43 @@ func (l *rateLimiter) allow(key string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	now := time.Now()
+	l.evictExpiredLocked(now)
 	cutoff := now.Add(-l.window)
-	seen := l.requests[key]
-	next := seen[:0]
-	for _, stamp := range seen {
+	next := make([]time.Time, 0, len(l.requests[key])+1)
+	for _, stamp := range l.requests[key] {
 		if stamp.After(cutoff) {
 			next = append(next, stamp)
 		}
 	}
 	if len(next) >= l.limit {
-		l.requests[key] = next
+		if len(next) == 0 {
+			delete(l.requests, key)
+		} else {
+			l.requests[key] = next
+		}
 		return false
 	}
 	l.requests[key] = append(next, now)
 	return true
+}
+
+func (l *rateLimiter) evictExpiredLocked(now time.Time) {
+	cutoff := now.Add(-l.window)
+	for key, stamps := range l.requests {
+		alive := 0
+		for _, stamp := range stamps {
+			if stamp.After(cutoff) {
+				alive++
+			}
+		}
+		if alive == 0 {
+			delete(l.requests, key)
+		}
+	}
+}
+
+func (l *rateLimiter) trackedKeys() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return len(l.requests)
 }

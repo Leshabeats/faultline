@@ -1,7 +1,6 @@
 import {
   parseReplayEnvelope,
   redactReplayAnswers,
-  serializeReplayEnvelope,
   type ReplayAttemptV1,
   type ReplayEnvelopeV1,
 } from '../replay'
@@ -30,16 +29,43 @@ export function hasPrivateInterviewContent(attempt: ReplayAttemptV1) {
     return (
       !interviewAnswerIsPublic(event.payload.answer) ||
       event.payload.prompt !== undefined ||
-      event.payload.feedback !== undefined
+      event.payload.feedback !== undefined ||
+      event.payload.focus !== undefined ||
+      event.timeline !== undefined
     )
   })
+}
+
+export function redactPublicReplayAnswers(envelope: ReplayEnvelopeV1): ReplayEnvelopeV1 {
+  const redacted = redactReplayAnswers(envelope)
+  return {
+    ...redacted,
+    attempt: {
+      ...redacted.attempt,
+      events: redacted.attempt.events.map((event) => {
+        if (event.type !== 'answer.submitted') return event
+        return {
+          ...event,
+          timeline: undefined,
+          payload: {
+            answer: REDACTED_INTERVIEW_ANSWER,
+          },
+        }
+      }),
+    },
+  }
 }
 
 export function createPublicReplayEnvelope(
   attempt: ReplayAttemptV1,
   publishedAt = new Date().toISOString(),
 ): PublicReplayEnvelopeV1 {
-  const serialized = serializeReplayEnvelope(attempt, { redactAnswers: true })
+  const serialized = JSON.stringify(redactPublicReplayAnswers({
+    schema: 'faultline.replay',
+    version: 1,
+    exportedAt: attempt.updatedAt,
+    attempt,
+  }))
   const parsed = parseReplayEnvelope(serialized)
   if (!parsed.ok) {
     throw new TypeError(parsed.error.message)
@@ -158,13 +184,14 @@ export function previewPublicReplay(attempt: ReplayAttemptV1): PublicReplayPrevi
       'interviewer-answers',
       'interviewer-prompts',
       'interviewer-feedback',
+      'answer-metadata',
       'api-keys',
     ],
   }
 }
 
 export function toRedactedReplayEnvelope(attempt: ReplayAttemptV1): ReplayEnvelopeV1 {
-  return redactReplayAnswers({
+  return redactPublicReplayAnswers({
     schema: 'faultline.replay',
     version: 1,
     exportedAt: attempt.updatedAt,
