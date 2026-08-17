@@ -27,16 +27,16 @@ var (
 )
 
 type PublishResult struct {
-	ID          string `json:"id"`
-	URL         string `json:"url"`
-	DeleteToken string `json:"deleteToken"`
-	CreatedAt   string `json:"createdAt"`
+	ID          string
+	URL         string
+	DeleteToken string
+	CreatedAt   time.Time
 }
 
 type PublicReplayView struct {
-	ID        string          `json:"id"`
-	CreatedAt string          `json:"createdAt"`
-	Envelope  json.RawMessage `json:"envelope"`
+	ID        string
+	CreatedAt time.Time
+	Envelope  []byte
 }
 
 func NewPublicReplayService(store replaystore.Store, publicShareBase string, maxRecords int, maxBytes int64) *PublicReplayService {
@@ -84,7 +84,7 @@ func (s *PublicReplayService) Publish(raw []byte) (PublishResult, error) {
 		ID:          id,
 		URL:         s.PublicURL(id),
 		DeleteToken: deleteToken,
-		CreatedAt:   createdAt.Format(time.RFC3339Nano),
+		CreatedAt:   createdAt,
 	}, nil
 }
 
@@ -95,8 +95,8 @@ func (s *PublicReplayService) Get(id string) (PublicReplayView, error) {
 	}
 	return PublicReplayView{
 		ID:        record.ID,
-		CreatedAt: record.CreatedAt.UTC().Format(time.RFC3339Nano),
-		Envelope:  json.RawMessage(record.EnvelopeJSON),
+		CreatedAt: record.CreatedAt.UTC(),
+		Envelope:  record.EnvelopeJSON,
 	}, nil
 }
 

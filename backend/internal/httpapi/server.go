@@ -64,7 +64,12 @@ func (s *Server) publish(w http.ResponseWriter, r *http.Request) {
 		"replayId", result.ID,
 		"bytes", len(raw),
 	)
-	writeJSON(w, http.StatusCreated, result)
+	writeJSON(w, http.StatusCreated, publishResponse{
+		ID:          result.ID,
+		URL:         result.URL,
+		DeleteToken: result.DeleteToken,
+		CreatedAt:   result.CreatedAt.UTC().Format(time.RFC3339Nano),
+	})
 }
 
 func (s *Server) get(w http.ResponseWriter, r *http.Request) {
@@ -74,7 +79,11 @@ func (s *Server) get(w http.ResponseWriter, r *http.Request) {
 		s.mapError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, view)
+	writeJSON(w, http.StatusOK, publicReplayResponse{
+		ID:        view.ID,
+		CreatedAt: view.CreatedAt.UTC().Format(time.RFC3339Nano),
+		Envelope:  json.RawMessage(view.Envelope),
+	})
 }
 
 func (s *Server) remove(w http.ResponseWriter, r *http.Request) {
@@ -220,6 +229,19 @@ func readLimitedBody(r *http.Request, max int64) ([]byte, error) {
 		return nil, errors.New("too large")
 	}
 	return raw, nil
+}
+
+type publishResponse struct {
+	ID          string `json:"id"`
+	URL         string `json:"url"`
+	DeleteToken string `json:"deleteToken"`
+	CreatedAt   string `json:"createdAt"`
+}
+
+type publicReplayResponse struct {
+	ID        string          `json:"id"`
+	CreatedAt string          `json:"createdAt"`
+	Envelope  json.RawMessage `json:"envelope"`
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

@@ -45,8 +45,8 @@ The service stores the published payload as an immutable record. Score verificat
 
 ## Layers
 
-- `internal/httpapi`: Chi transport, CORS, body/rate limits, status mapping.
-- `internal/service`: publish/get/delete workflow, IDs, delete tokens, storage quota policy.
+- `internal/httpapi`: Chi transport, CORS, body/rate limits, HTTP DTOs, status mapping.
+- `internal/service`: publish/get/delete workflow, IDs, delete tokens, storage quota policy. Returns application types, not JSON envelopes.
 - `internal/replay`: public envelope and event invariants, independent of HTTP and SQLite.
 - `internal/replaystore`: persistence port and shared store errors.
-- `internal/repository`: SQLite adapter that executes guarded inserts without choosing quota limits.
+- `internal/repository`: SQLite adapter that locks, measures usage, and inserts. Quota limits stay in the service.

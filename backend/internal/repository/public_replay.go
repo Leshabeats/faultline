@@ -24,12 +24,6 @@ func (r *PublicReplayRepository) InsertGuarded(record replaystore.Record, guard 
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.Exec(`CREATE TABLE IF NOT EXISTS public_replay_quota_lock (id INTEGER PRIMARY KEY CHECK (id = 1))`); err != nil {
-		return err
-	}
-	if _, err := tx.Exec(`INSERT OR IGNORE INTO public_replay_quota_lock (id) VALUES (1)`); err != nil {
-		return err
-	}
 	if _, err := tx.Exec(`UPDATE public_replay_quota_lock SET id = 1 WHERE id = 1`); err != nil {
 		return err
 	}
