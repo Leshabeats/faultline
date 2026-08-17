@@ -242,3 +242,15 @@ func TestRateLimiterEvictsExpiredKeys(t *testing.T) {
 	}
 }
 
+func TestStateChangingRequestsFromUnknownOriginsAreRejected(t *testing.T) {
+	handler := testHandler(t)
+	req := httptest.NewRequest(http.MethodPost, "/api/public-replays", strings.NewReader(validBody()))
+	req.Header.Set("Content-Type", "text/plain")
+	req.Header.Set("Origin", "https://evil.example")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for disallowed origin POST, got %d", rec.Code)
+	}
+}
+

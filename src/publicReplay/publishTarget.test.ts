@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createCompletedTestAttempt, createTestAttempt } from '../replay/testFixtures'
-import { challengePublishAttempt, resolvePublishAttempt } from './publishTarget'
+import { challengePublishAttempt, nextPublishRetry, resolvePublishAttempt } from './publishTarget'
 
 describe('challenge publish target', () => {
   it('binds Challenge Publish to the last submitted attempt, not savedAttempts[0]', () => {
@@ -25,5 +25,10 @@ describe('challenge publish target', () => {
     const submitted = createCompletedTestAttempt()
     expect(resolvePublishAttempt(submitted.id, [submitted])).toEqual(submitted)
     expect(resolvePublishAttempt(submitted.id, [null, undefined])).toBeNull()
+  })
+
+  it('retries a failed unpublish instead of creating another publication', () => {
+    expect(nextPublishRetry('unpublish')).toBe('unpublish')
+    expect(nextPublishRetry('publish')).toBe('publish')
   })
 })

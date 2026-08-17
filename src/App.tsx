@@ -93,6 +93,7 @@ import {
   createPublicReplayEnvelope,
   previewPublicReplay,
   publicReplayHref,
+  nextPublishRetry,
   resolvePublishAttempt,
   type PublicReplayError,
 } from './publicReplay'
@@ -175,6 +176,7 @@ export function App() {
   const [publishUrl, setPublishUrl] = useState<string>()
   const [publishError, setPublishError] = useState<string>()
   const [publishCopied, setPublishCopied] = useState(false)
+  const [publishAction, setPublishAction] = useState<'publish' | 'unpublish'>('publish')
   const [lastSubmittedAttempt, setLastSubmittedAttempt] = useState<ReplayAttemptV1 | null>(null)
   const [savedAttempts, setSavedAttempts] = useState<ReplayAttemptV1[]>(() => {
     try {
@@ -1107,10 +1109,12 @@ export function App() {
     setPublishUrl(existing?.url)
     setPublishError(undefined)
     setPublishCopied(false)
+    setPublishAction('publish')
   }, [capabilityStore, lastSubmittedAttempt, replayAttempt, savedAttempts])
 
   const confirmPublish = useCallback(async () => {
     if (!publishAttempt) return
+    setPublishAction('publish')
     setPublishStatus('publishing')
     setPublishError(undefined)
     try {
@@ -1178,6 +1182,7 @@ export function App() {
     if (!publishAttempt) return
     const existing = capabilityStore.getByAttemptId(publishAttempt.id)
     if (!existing) return
+    setPublishAction('unpublish')
     try {
       await publicReplayClient.remove(existing.publicId, existing.deleteToken)
       capabilityStore.remove(existing.publicId)
@@ -1564,9 +1569,13 @@ export function App() {
           setPublishAttempt(null)
           setPublishStatus('confirm')
           setPublishCopied(false)
+          setPublishAction('publish')
         }}
         onConfirm={() => void confirmPublish()}
-        onRetry={() => void confirmPublish()}
+        onRetry={() => {
+          if (nextPublishRetry(publishAction) === 'unpublish') void unpublishReplay()
+          else void confirmPublish()
+        }}
         onCopy={() => void copyPublicLink()}
         onUnpublish={publishUrl ? () => void unpublishReplay() : undefined}
       />

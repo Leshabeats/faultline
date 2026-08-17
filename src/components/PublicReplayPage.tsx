@@ -61,6 +61,7 @@ export function PublicReplayPage({
   const [playing, setPlaying] = useState(false)
   const [speed, setSpeed] = useState(1)
   const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string>()
   const [shareNotice, setShareNotice] = useState<string>()
   const [canvasNodes, setCanvasNodes] = useState<SystemFlowNode[]>(emptyNodes)
   const [canvasEdges, setCanvasEdges] = useState<SystemFlowEdge[]>(emptyEdges)
@@ -68,26 +69,31 @@ export function PublicReplayPage({
   const owned = capabilities.getByPublicId(id)
   const ru = locale === 'ru'
 
-  const loadReplay = useCallback(async () => {
-    setStatus((current) => current === 'ready' ? current : 'loading')
+  useEffect(() => {
+    let cancelled = false
+    setAttempt(null)
+    setCursorMs(0)
+    setPlaying(false)
+    setStatus('loading')
     setError(null)
-    try {
-      const record = await replayClient.get(id)
+    setDeleteError(undefined)
+    void replayClient.get(id).then((record) => {
+      if (cancelled) return
       setAttempt(verifyImportedAttempt(record.envelope.replay.attempt))
       setStatus('ready')
-    } catch (caught) {
+    }).catch((caught) => {
+      if (cancelled) return
       const next = caught as PublicReplayError
       setError({
         code: next?.code ?? 'unavailable',
         message: next?.message ?? 'The replay service is unavailable.',
       })
       setStatus('error')
+    })
+    return () => {
+      cancelled = true
     }
   }, [id, replayClient])
-
-  useEffect(() => {
-    void loadReplay()
-  }, [loadReplay])
 
   useEffect(() => {
     document.documentElement.lang = locale
@@ -205,13 +211,11 @@ export function PublicReplayPage({
       window.location.reload()
     } catch (caught) {
       const next = caught as PublicReplayError
-      setError({
-        code: next?.code ?? 'unavailable',
-        message: next?.message ?? 'The replay service is unavailable.',
-      })
+      const copy = applicationCopy[locale]
+      setDeleteError(next?.message || copy.publishUnavailable)
       setDeleting(false)
     }
-  }, [capabilities, id, owned, replayClient])
+  }, [capabilities, id, locale, owned, replayClient])
 
   return (
     <div className={`app-shell interviewer-closed simulation-${playing ? 'running' : 'paused'} replay-mode public-replay-page`}>
@@ -244,7 +248,21 @@ export function PublicReplayPage({
           locale={locale}
           status={status === 'error' ? 'error' : 'loading'}
           error={error}
-          onRetry={() => void loadReplay()}
+          onRetry={() => {
+            setStatus('loading')
+            setError(null)
+            void replayClient.get(id).then((record) => {
+              setAttempt(verifyImportedAttempt(record.envelope.replay.attempt))
+              setStatus('ready')
+            }).catch((caught) => {
+              const next = caught as PublicReplayError
+              setError({
+                code: next?.code ?? 'unavailable',
+                message: next?.message ?? 'The replay service is unavailable.',
+              })
+              setStatus('error')
+            })
+          }}
         />
       ) : (
         <div className="workspace">
@@ -343,11 +361,12 @@ export function PublicReplayPage({
               : 'Score is recomputed by the local judge and is not server-verified.'}
             onDeletePublication={owned ? () => void deletePublication() : undefined}
             deletingPublication={deleting}
+            deleteError={deleteError}
           />
         </div>
       )}
       <div className="screen-reader-status" aria-live="polite">
-        {shareNotice ?? (status === 'ready'
+        {deleteError ?? shareNotice ?? (status === 'ready'
           ? ru
             ? `Публичный повтор ${playing ? 'воспроизводится' : 'приостановлен'}.`
             : `Public replay ${playing ? 'playing' : 'paused'}.`

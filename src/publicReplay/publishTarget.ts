@@ -12,3 +12,7 @@ export function challengePublishAttempt(
 ) {
   return lastSubmittedAttempt
 }
+
+export function nextPublishRetry(action: 'publish' | 'unpublish') {
+  return action === 'unpublish' ? 'unpublish' : 'publish'
+}

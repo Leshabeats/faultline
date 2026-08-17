@@ -31,12 +31,17 @@ export class PublicReplayCapabilityStore {
   private memoryItems: StoredReplayCapability[] | null = null
 
   list(): StoredReplayCapability[] {
-    if (this.memoryItems) return this.memoryItems
-    const serialized = this.storage.getItem(this.key)
-    if (!serialized) {
-      this.memoryItems = []
-      return this.memoryItems
+    return this.mergeStored(this.memoryItems ?? [])
+  }
+
+  private readStored(): StoredReplayCapability[] {
+    let serialized: string | null
+    try {
+      serialized = this.storage.getItem(this.key)
+    } catch {
+      return this.memoryItems ?? []
     }
+    if (!serialized) return []
     try {
       const parsed = JSON.parse(serialized) as unknown
       if (
@@ -45,15 +50,24 @@ export class PublicReplayCapabilityStore {
         parsed.version !== VERSION ||
         !Array.isArray(parsed.items)
       ) {
-        this.memoryItems = []
-        return this.memoryItems
+        return []
       }
-      this.memoryItems = parsed.items.filter(isCapability).slice(0, MAX_STORED)
-      return this.memoryItems
+      return parsed.items.filter(isCapability).slice(0, MAX_STORED)
     } catch {
-      this.memoryItems = []
-      return this.memoryItems
+      return []
     }
+  }
+
+  private mergeStored(sessionItems: StoredReplayCapability[]) {
+    const merged = new Map<string, StoredReplayCapability>()
+    for (const item of [...this.readStored(), ...sessionItems]) {
+      merged.set(item.publicId, item)
+    }
+    const items = [...merged.values()]
+      .sort((left, right) => right.publishedAt.localeCompare(left.publishedAt))
+      .slice(0, MAX_STORED)
+    this.memoryItems = items
+    return items
   }
 
   getByPublicId(publicId: string) {
@@ -67,7 +81,7 @@ export class PublicReplayCapabilityStore {
   save(capability: StoredReplayCapability): boolean {
     const items = [
       capability,
-      ...this.list().filter((item) => (
+      ...this.mergeStored(this.memoryItems ?? []).filter((item) => (
         item.publicId !== capability.publicId && item.attemptId !== capability.attemptId
       )),
     ].slice(0, MAX_STORED)
@@ -76,7 +90,7 @@ export class PublicReplayCapabilityStore {
   }
 
   remove(publicId: string): boolean {
-    const items = this.list().filter((item) => item.publicId !== publicId)
+    const items = this.mergeStored(this.memoryItems ?? []).filter((item) => item.publicId !== publicId)
     this.memoryItems = items
     if (items.length === 0) {
       try {

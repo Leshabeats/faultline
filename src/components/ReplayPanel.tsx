@@ -18,6 +18,7 @@ interface ReplayPanelProps {
   scoreDisclaimer?: string
   onDeletePublication?: () => void
   deletingPublication?: boolean
+  deleteError?: string
 }
 
 const formatDuration = (valueMs: number) => {
@@ -43,6 +44,7 @@ export function ReplayPanel({
   scoreDisclaimer,
   onDeletePublication,
   deletingPublication = false,
+  deleteError,
 }: ReplayPanelProps) {
   const ru = locale === 'ru'
   return (
@@ -101,6 +103,7 @@ export function ReplayPanel({
                 ? ru ? 'Удаление…' : 'Removing…'
                 : ru ? 'Удалить публикацию' : 'Unpublish replay'}
             </button>
+            {deleteError && <p className="publish-error" role="alert">{deleteError}</p>}
           </section>
         )}
 

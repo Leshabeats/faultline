@@ -78,7 +78,7 @@ npm run dev:api
 npm run dev -- --host 127.0.0.1 --port 4173
 ```
 
-The Vite dev server proxies `/api` and `/healthz` to `http://127.0.0.1:8787`. Example environment files live at [`.env.example`](.env.example) and [`backend/.env.example`](backend/.env.example). SQLite data stays in `backend/data/` and is gitignored.
+The Vite dev server proxies `/api` and `/healthz` to `http://127.0.0.1:8787`. Example environment files live at [`.env.example`](.env.example) and [`backend/.env.example`](backend/.env.example). Copy the backend file to `backend/.env`; the API loads it on boot. SQLite data stays in `backend/data/` and is gitignored.
 
 Other commands:
 

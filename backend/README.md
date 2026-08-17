@@ -18,7 +18,7 @@ The process listens on `127.0.0.1:8787` by default, applies SQLite migrations on
 
 ## Environment
 
-See [`.env.example`](.env.example). In production, `FAULTLINE_CORS_ORIGINS` cannot include `*`.
+See [`.env.example`](.env.example). Copy it to `backend/.env` or a process-local `.env`; `config.Load` reads that file before applying environment variables. Existing exported variables still win. In production, `FAULTLINE_CORS_ORIGINS` cannot include `*`.
 
 ## Docker
 

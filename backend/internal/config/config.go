@@ -1,8 +1,10 @@
 package config
 
 import (
+	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -21,6 +23,7 @@ type Config struct {
 }
 
 func Load() (Config, error) {
+	loadDotEnv()
 	cfg := Config{
 		Env:                getenv("FAULTLINE_ENV", "development"),
 		HTTPAddr:           getenv("FAULTLINE_HTTP_ADDR", "127.0.0.1:8787"),
@@ -92,4 +95,35 @@ func contains(values []string, wanted string) bool {
 		}
 	}
 	return false
+}
+
+func loadDotEnv() {
+	for _, path := range []string{".env", filepath.Join("backend", ".env")} {
+		file, err := os.Open(path)
+		if err != nil {
+			continue
+		}
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if line == "" || strings.HasPrefix(line, "#") || !strings.Contains(line, "=") {
+				continue
+			}
+			key, value, _ := strings.Cut(line, "=")
+			key = strings.TrimSpace(key)
+			value = strings.TrimSpace(value)
+			if len(value) >= 2 {
+				if (value[0] == '"' && value[len(value)-1] == '"') || (value[0] == '\'' && value[len(value)-1] == '\'') {
+					value = value[1 : len(value)-1]
+				}
+			}
+			if key == "" {
+				continue
+			}
+			if _, exists := os.LookupEnv(key); !exists {
+				_ = os.Setenv(key, value)
+			}
+		}
+		_ = file.Close()
+	}
 }

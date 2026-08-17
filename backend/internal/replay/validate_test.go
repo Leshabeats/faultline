@@ -143,3 +143,31 @@ func TestParseAndValidatePublicRejectsAnswerFocusAndTimeline(t *testing.T) {
 	}
 }
 
+func TestParseAndValidatePublicRejectsNullOptionalFields(t *testing.T) {
+	raw := strings.ReplaceAll(validEnvelope(), `"fault": "none"
+      }`, `"fault": "none",
+        "capacity": null
+      },
+      "summary": null`)
+	_, _, err := ParseAndValidatePublic([]byte(raw))
+	if err == nil {
+		t.Fatal("expected invalid-replay for null optional fields")
+	}
+	replayErr, ok := err.(*Error)
+	if !ok || replayErr.Code != "invalid-replay" {
+		t.Fatalf("expected invalid-replay, got %#v", err)
+	}
+}
+
+func TestParseAndValidatePublicRejectsMalformedFaultTarget(t *testing.T) {
+	raw := strings.ReplaceAll(validEnvelope(), `"fault": "none"`, `"fault": "none", "faultTarget": {"type":"node","id":"missing"}`)
+	_, _, err := ParseAndValidatePublic([]byte(raw))
+	if err == nil {
+		t.Fatal("expected invalid-replay for malformed faultTarget")
+	}
+	replayErr, ok := err.(*Error)
+	if !ok || replayErr.Code != "invalid-replay" {
+		t.Fatalf("expected invalid-replay, got %#v", err)
+	}
+}
+

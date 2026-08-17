@@ -37,6 +37,7 @@ export {
 } from './routing'
 export {
   challengePublishAttempt,
+  nextPublishRetry,
   resolvePublishAttempt,
 } from './publishTarget'
 export { publicReplayShareUrl } from './shareLink'

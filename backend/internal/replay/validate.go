@@ -195,6 +195,12 @@ func validateAttempt(attempt ReplayAttempt) error {
 	if !contains([]int{1, 3, 10}, attempt.Initial.Load) || !isFault(attempt.Initial.Fault) {
 		return invalidReplay()
 	}
+	if err := validateOptionalInitial(attempt.Initial); err != nil {
+		return err
+	}
+	if err := validateSummary(attempt.Summary, attempt.DurationMs); err != nil {
+		return err
+	}
 	if len(attempt.Events) > MaxEvents {
 		return invalidReplay()
 	}
@@ -224,6 +230,113 @@ func validateAttempt(attempt ReplayAttempt) error {
 		return invalidReplay()
 	}
 	return nil
+}
+
+
+func validateOptionalInitial(initial ReplayInitial) error {
+	if len(initial.Capacity) > 0 && !isJSONNull(initial.Capacity) {
+		object, err := decodeObject(initial.Capacity)
+		if err != nil || !isCapacityTuning(object) {
+			return invalidReplay()
+		}
+	} else if isJSONNull(initial.Capacity) {
+		return invalidReplay()
+	}
+	if len(initial.FaultTarget) == 0 || isJSONNull(initial.FaultTarget) {
+		if isJSONNull(initial.FaultTarget) {
+			return invalidReplay()
+		}
+		if initial.Fault == "component-outage" {
+			return invalidReplay()
+		}
+		return nil
+	}
+	object, err := decodeObject(initial.FaultTarget)
+	if err != nil || !hasOnlyKeys(object, "type", "id") {
+		return invalidReplay()
+	}
+	kind, _ := object["type"].(string)
+	id, _ := object["id"].(string)
+	if !bounded(id) || (kind != "node" && kind != "edge") {
+		return invalidReplay()
+	}
+	if initial.Fault == "none" {
+		return invalidReplay()
+	}
+	if kind == "node" && initial.Fault != "component-outage" {
+		return invalidReplay()
+	}
+	if kind == "edge" && initial.Fault != "network-partition" {
+		return invalidReplay()
+	}
+	if initial.Fault == "component-outage" && kind != "node" {
+		return invalidReplay()
+	}
+	exists := false
+	if kind == "node" {
+		for _, node := range initial.Architecture.Nodes {
+			if node.ID == id {
+				exists = true
+				break
+			}
+		}
+	} else {
+		for _, edge := range initial.Architecture.Edges {
+			if edge.ID == id {
+				exists = true
+				break
+			}
+		}
+	}
+	if !exists {
+		return invalidReplay()
+	}
+	return nil
+}
+
+func validateSummary(raw json.RawMessage, durationMs int) error {
+	if len(raw) == 0 {
+		return nil
+	}
+	if isJSONNull(raw) {
+		return invalidReplay()
+	}
+	object, err := decodeObject(raw)
+	if err != nil || !hasOnlyKeys(object, "score", "maxScore", "passed", "keyMoment") {
+		return invalidReplay()
+	}
+	score, scoreOK := asInt(object["score"])
+	maxScore, maxOK := asInt(object["maxScore"])
+	passed, passedOK := object["passed"].(bool)
+	if !scoreOK || !maxOK || !passedOK || score < 0 || maxScore < 0 || score > maxScore {
+		return invalidReplay()
+	}
+	_ = passed
+	if _, exists := object["keyMoment"]; !exists {
+		return nil
+	}
+	moment, ok := object["keyMoment"].(map[string]any)
+	if !ok || !hasOnlyKeys(moment, "atMs", "eventId", "title", "detail", "tone") {
+		return invalidReplay()
+	}
+	atMs, atOK := asInt(moment["atMs"])
+	title, titleOK := moment["title"].(string)
+	detail, detailOK := moment["detail"].(string)
+	tone, toneOK := moment["tone"].(string)
+	if !atOK || atMs < 0 || atMs > durationMs || !titleOK || !bounded(title) || !detailOK || !boundedAllowEmpty(detail) {
+		return invalidReplay()
+	}
+	if !toneOK || !containsString([]string{"neutral", "healthy", "warning", "critical"}, tone) {
+		return invalidReplay()
+	}
+	if eventID, exists := moment["eventId"]; exists && !isBoundedValue(eventID) {
+		return invalidReplay()
+	}
+	return nil
+}
+
+func isJSONNull(raw json.RawMessage) bool {
+	return strings.TrimSpace(string(raw)) == "null"
 }
 
 func validateArchitecture(architecture ReplayArchitecture) error {
