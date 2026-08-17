@@ -36,8 +36,10 @@ func testHandler(t *testing.T) http.Handler {
 		CORSOrigins:        []string{"http://127.0.0.1:4173"},
 		MaxBodyBytes:       1_100_000,
 		RateLimitPerMinute: 30,
+		MaxStoredReplays:   200,
+		MaxStoredBytes:     50_000_000,
 	}
-	return New(cfg, service.NewPublicReplayService(repository.NewPublicReplayRepository(db), cfg.PublicShareBase), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	return New(cfg, service.NewPublicReplayService(repository.NewPublicReplayRepository(db), cfg.PublicShareBase, 200, 50_000_000), slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
 
 func validBody() string {
@@ -251,6 +253,42 @@ func TestStateChangingRequestsFromUnknownOriginsAreRejected(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("expected 403 for disallowed origin POST, got %d", rec.Code)
+	}
+}
+
+func TestPublishRejectsWhenStorageQuotaExceeded(t *testing.T) {
+	db, err := sql.Open("sqlite", "file:quota-"+t.Name()+"?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := migrate.Up(db); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{
+		Env:                "test",
+		HTTPAddr:           "127.0.0.1:0",
+		PublicShareBase:    "http://127.0.0.1:4173",
+		CORSOrigins:        []string{"http://127.0.0.1:4173"},
+		MaxBodyBytes:       1_100_000,
+		RateLimitPerMinute: 30,
+		MaxStoredReplays:   1,
+		MaxStoredBytes:     50_000_000,
+	}
+	handler := New(cfg, service.NewPublicReplayService(repository.NewPublicReplayRepository(db), cfg.PublicShareBase, 1, 50_000_000), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	first := httptest.NewRecorder()
+	firstReq := httptest.NewRequest(http.MethodPost, "/api/public-replays", strings.NewReader(validBody()))
+	firstReq.Header.Set("Content-Type", "application/json")
+	handler.ServeHTTP(first, firstReq)
+	if first.Code != http.StatusCreated {
+		t.Fatalf("first publish status %d: %s", first.Code, first.Body.String())
+	}
+	second := httptest.NewRecorder()
+	secondReq := httptest.NewRequest(http.MethodPost, "/api/public-replays", strings.NewReader(validBody()))
+	secondReq.Header.Set("Content-Type", "application/json")
+	handler.ServeHTTP(second, secondReq)
+	if second.Code != http.StatusInsufficientStorage {
+		t.Fatalf("expected 507 for quota, got %d: %s", second.Code, second.Body.String())
 	}
 }
 

@@ -48,6 +48,9 @@ const readError = async (response: Response): Promise<PublicReplayError> => {
     return asError('too-large', message || 'Public replay is larger than the safe limit.')
   }
   if (response.status === 429) return asError('rate-limited', message || 'Too many publish requests. Try again shortly.')
+  if (response.status === 507 || code === 'storage-quota') {
+    return asError('storage-quota', message || 'Public replay storage is full.')
+  }
   if (code === 'unsupported-version') {
     return asError('unsupported-version', message || 'This public replay version is not supported.')
   }

@@ -94,6 +94,7 @@ import {
   previewPublicReplay,
   publicReplayHref,
   nextPublishRetry,
+  publicReplayErrorCopy,
   resolvePublishAttempt,
   type PublicReplayError,
 } from './publicReplay'
@@ -172,6 +173,8 @@ export function App() {
   const [publicReplayClient] = useState(() => new FetchPublicReplayClient())
   const [capabilitiesVersion, setCapabilitiesVersion] = useState(0)
   const [publishAttempt, setPublishAttempt] = useState<ReplayAttemptV1 | null>(null)
+  const publishAttemptRef = useRef<ReplayAttemptV1 | null>(null)
+  publishAttemptRef.current = publishAttempt
   const [publishStatus, setPublishStatus] = useState<'confirm' | 'publishing' | 'ready' | 'error'>('confirm')
   const [publishUrl, setPublishUrl] = useState<string>()
   const [publishError, setPublishError] = useState<string>()
@@ -1080,20 +1083,7 @@ export function App() {
   }, [])
 
   const publishErrorCopy = useCallback((error: PublicReplayError) => {
-    if (locale === 'ru') {
-      return {
-        'too-large': 'Публичный повтор превышает безопасный размер.',
-        'invalid-json': 'Сервис не принял JSON повтора.',
-        'unsupported-version': 'Версия публичного повтора пока не поддерживается.',
-        'invalid-replay': 'Сервис не принял этот повтор.',
-        'private-content': 'Публичный повтор всё ещё содержит ответы интервьюеру.',
-        'not-found': 'Публичный повтор не найден.',
-        'unauthorized': 'Недостаточно прав, чтобы удалить этот повтор.',
-        'rate-limited': 'Слишком много публикаций. Попробуйте чуть позже.',
-        'unavailable': 'Сервис публичных повторов недоступен. Запустите локальный backend.',
-      }[error.code]
-    }
-    return error.message
+    return publicReplayErrorCopy(locale, error)
   }, [locale])
 
   const openPublish = useCallback((attemptId: string) => {
@@ -1114,15 +1104,17 @@ export function App() {
 
   const confirmPublish = useCallback(async () => {
     if (!publishAttempt) return
+    const attemptId = publishAttempt.id
     setPublishAction('publish')
     setPublishStatus('publishing')
     setPublishError(undefined)
     try {
       const result = await publicReplayClient.publish(createPublicReplayEnvelope(publishAttempt))
+      if (publishAttemptRef.current?.id !== attemptId) return
       const url = result.url || publicReplayHref(result.id)
       const persisted = capabilityStore.save({
         publicId: result.id,
-        attemptId: publishAttempt.id,
+        attemptId,
         url,
         deleteToken: result.deleteToken,
         publishedAt: new Date().toISOString(),
@@ -1155,6 +1147,7 @@ export function App() {
         })
       }
     } catch (caught) {
+      if (publishAttemptRef.current?.id !== attemptId) return
       const error = caught as PublicReplayError
       const message = publishErrorCopy({
         code: error?.code ?? 'unavailable',
@@ -1183,12 +1176,14 @@ export function App() {
     const existing = capabilityStore.getByAttemptId(publishAttempt.id)
     if (!existing) return
     setPublishAction('unpublish')
+    setPublishError(undefined)
     try {
       await publicReplayClient.remove(existing.publicId, existing.deleteToken)
       capabilityStore.remove(existing.publicId)
       setCapabilitiesVersion((value) => value + 1)
       setPublishUrl(undefined)
       setPublishStatus('confirm')
+      setPublishError(undefined)
       addEvent(copy.replayUnpublished, copy.publicLinkRemoved, 'healthy')
     } catch (caught) {
       const error = caught as PublicReplayError

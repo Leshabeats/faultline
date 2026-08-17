@@ -20,6 +20,7 @@ export type PublicReplayErrorCode =
   | 'not-found'
   | 'unauthorized'
   | 'rate-limited'
+  | 'storage-quota'
   | 'unavailable'
 
 export interface PublicReplayError {

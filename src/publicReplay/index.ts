@@ -33,6 +33,7 @@ export {
   publicReplayHref,
   publicReplayPath,
   readAppRoute,
+  workspaceHref,
   type AppRoute,
 } from './routing'
 export {
@@ -41,3 +42,4 @@ export {
   resolvePublishAttempt,
 } from './publishTarget'
 export { publicReplayShareUrl } from './shareLink'
+export { publicReplayErrorCopy } from './errors'

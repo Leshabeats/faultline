@@ -16,7 +16,11 @@ import (
 type PublicReplayService struct {
 	repo            *repository.PublicReplayRepository
 	publicShareBase string
+	maxRecords      int
+	maxBytes        int64
 }
+
+var ErrStorageQuota = errors.New("public replay storage quota exceeded")
 
 type PublishResult struct {
 	ID          string `json:"id"`
@@ -31,8 +35,13 @@ type PublicReplayView struct {
 	Envelope  json.RawMessage `json:"envelope"`
 }
 
-func NewPublicReplayService(repo *repository.PublicReplayRepository, publicShareBase string) *PublicReplayService {
-	return &PublicReplayService{repo: repo, publicShareBase: strings.TrimRight(publicShareBase, "/")}
+func NewPublicReplayService(repo *repository.PublicReplayRepository, publicShareBase string, maxRecords int, maxBytes int64) *PublicReplayService {
+	return &PublicReplayService{
+		repo:            repo,
+		publicShareBase: strings.TrimRight(publicShareBase, "/"),
+		maxRecords:      maxRecords,
+		maxBytes:        maxBytes,
+	}
 }
 
 func (s *PublicReplayService) Publish(raw []byte) (PublishResult, error) {
@@ -42,6 +51,9 @@ func (s *PublicReplayService) Publish(raw []byte) (PublishResult, error) {
 	}
 	canonical, err := json.Marshal(envelope)
 	if err != nil {
+		return PublishResult{}, err
+	}
+	if err := s.ensureQuota(int64(len(canonical))); err != nil {
 		return PublishResult{}, err
 	}
 	id, err := randomToken(18)
@@ -107,4 +119,25 @@ func IsNotFound(err error) bool {
 
 func IsForbidden(err error) bool {
 	return errors.Is(err, repository.ErrForbidden)
+}
+
+func (s *PublicReplayService) ensureQuota(additionalBytes int64) error {
+	if s.maxRecords <= 0 && s.maxBytes <= 0 {
+		return nil
+	}
+	usage, err := s.repo.Usage()
+	if err != nil {
+		return err
+	}
+	if s.maxRecords > 0 && usage.Records+1 > s.maxRecords {
+		return ErrStorageQuota
+	}
+	if s.maxBytes > 0 && usage.Bytes+additionalBytes > s.maxBytes {
+		return ErrStorageQuota
+	}
+	return nil
+}
+
+func IsQuotaExceeded(err error) bool {
+	return errors.Is(err, ErrStorageQuota)
 }

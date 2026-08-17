@@ -36,6 +36,20 @@ func HashDeleteToken(token string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+type StorageUsage struct {
+	Records int
+	Bytes   int64
+}
+
+func (r *PublicReplayRepository) Usage() (StorageUsage, error) {
+	var usage StorageUsage
+	err := r.db.QueryRow(`
+SELECT COUNT(1), COALESCE(SUM(LENGTH(envelope_json)), 0)
+FROM public_replays
+`).Scan(&usage.Records, &usage.Bytes)
+	return usage, err
+}
+
 func (r *PublicReplayRepository) Insert(record PublicReplayRecord) error {
 	_, err := r.db.Exec(
 		`INSERT INTO public_replays (id, created_at, envelope_json, delete_token_hash) VALUES (?, ?, ?, ?)`,

@@ -171,3 +171,15 @@ func TestParseAndValidatePublicRejectsMalformedFaultTarget(t *testing.T) {
 	}
 }
 
+func TestParseAndValidatePublicRejectsMalformedNodeShape(t *testing.T) {
+	raw := strings.ReplaceAll(validEnvelope(), `"position": {"x": 10, "y": 20}`, `"position": {"x":"bad","y":20}`)
+	_, _, err := ParseAndValidatePublic([]byte(raw))
+	if err == nil {
+		t.Fatal("expected invalid-replay for malformed node position")
+	}
+	replayErr, ok := err.(*Error)
+	if !ok || replayErr.Code != "invalid-replay" {
+		t.Fatalf("expected invalid-replay, got %#v", err)
+	}
+}
+

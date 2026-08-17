@@ -345,7 +345,7 @@ func validateArchitecture(architecture ReplayArchitecture) error {
 	}
 	nodeIDs := map[string]struct{}{}
 	for _, node := range architecture.Nodes {
-		if !bounded(node.ID) || node.Type != "system" || !bounded(node.Data.Kind) || !bounded(node.Data.Label) {
+		if !isStoredNode(node) {
 			return invalidReplay()
 		}
 		if _, exists := nodeIDs[node.ID]; exists {
@@ -653,6 +653,20 @@ func hasOnlyKeys(object map[string]any, allowed ...string) bool {
 func isLoad(value any) bool {
 	load, ok := asInt(value)
 	return ok && contains([]int{1, 3, 10}, load)
+}
+
+
+func isStoredNode(node ReplayNode) bool {
+	if !bounded(node.ID) || node.Type != "system" || !isPosition(node.Position) || !isComponentKind(node.Data.Kind) || !bounded(node.Data.Label) {
+		return false
+	}
+	if node.Data.Replicas != nil && (*node.Data.Replicas < 1 || *node.Data.Replicas > 16) {
+		return false
+	}
+	if node.Data.Shards != nil && (*node.Data.Shards < 1 || *node.Data.Shards > 64) {
+		return false
+	}
+	return true
 }
 
 func isNode(value any) bool {

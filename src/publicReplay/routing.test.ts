@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isPublicReplayId, publicReplayHash, readAppRoute } from './routing'
+import { isPublicReplayId, publicReplayHash, readAppRoute, workspaceHref } from './routing'
 
 describe('public replay routing', () => {
   it('accepts hash routes used by GitHub Pages', () => {
@@ -29,5 +29,12 @@ describe('public replay routing', () => {
 
   it('builds a hash URL that stays compatible with static hosting', () => {
     expect(publicReplayHash('AbCdEfGhIjKlMnOpQrStUv')).toBe('#/r/AbCdEfGhIjKlMnOpQrStUv')
+  })
+
+  it('leaves pathname replay routes instead of only clearing the hash', () => {
+    expect(workspaceHref({
+      origin: 'http://127.0.0.1:4173',
+      pathname: '/r/AbCdEfGhIjKlMnOpQrStUv',
+    })).toBe('http://127.0.0.1:4173/')
   })
 })

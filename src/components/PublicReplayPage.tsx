@@ -32,7 +32,9 @@ import { initialLocale, scenarioLabels } from '../i18n'
 import {
   FetchPublicReplayClient,
   createPublicReplayCapabilityStore,
+  publicReplayErrorCopy,
   publicReplayShareUrl,
+  workspaceHref,
   type PublicReplayClient,
   type PublicReplayError,
 } from '../publicReplay'
@@ -62,6 +64,7 @@ export function PublicReplayPage({
   const [speed, setSpeed] = useState(1)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string>()
+  const [retryToken, setRetryToken] = useState(0)
   const [shareNotice, setShareNotice] = useState<string>()
   const [canvasNodes, setCanvasNodes] = useState<SystemFlowNode[]>(emptyNodes)
   const [canvasEdges, setCanvasEdges] = useState<SystemFlowEdge[]>(emptyEdges)
@@ -93,10 +96,11 @@ export function PublicReplayPage({
     return () => {
       cancelled = true
     }
-  }, [id, replayClient])
+  }, [id, replayClient, retryToken])
 
   useEffect(() => {
     document.documentElement.lang = locale
+    try { window.localStorage.setItem('faultline.locale', locale) } catch { /* optional */ }
   }, [locale])
 
   const frame = useMemo(
@@ -187,6 +191,10 @@ export function PublicReplayPage({
     seek(event?.atMs ?? (direction < 0 ? 0 : attempt.durationMs))
   }, [attempt, cursorMs, events, seek])
 
+  const leavePublicReplay = useCallback(() => {
+    window.location.assign(workspaceHref())
+  }, [])
+
   const sharePublicLink = useCallback(async () => {
     const url = publicReplayShareUrl(
       id,
@@ -207,15 +215,16 @@ export function PublicReplayPage({
     try {
       await replayClient.remove(id, owned.deleteToken)
       capabilities.remove(id)
-      window.location.hash = ''
-      window.location.reload()
+      leavePublicReplay()
     } catch (caught) {
       const next = caught as PublicReplayError
-      const copy = applicationCopy[locale]
-      setDeleteError(next?.message || copy.publishUnavailable)
+      setDeleteError(publicReplayErrorCopy(locale, {
+        code: next?.code ?? 'unavailable',
+        message: next?.message ?? applicationCopy[locale].publishUnavailable,
+      }))
       setDeleting(false)
     }
-  }, [capabilities, id, locale, owned, replayClient])
+  }, [capabilities, id, leavePublicReplay, locale, owned, replayClient])
 
   return (
     <div className={`app-shell interviewer-closed simulation-${playing ? 'running' : 'paused'} replay-mode public-replay-page`}>
@@ -237,32 +246,18 @@ export function PublicReplayPage({
         onToggleInterviewer={() => undefined}
         onOpenCapacity={() => undefined}
         onOpenChallenge={() => undefined}
-        onOpenHistory={() => { window.location.hash = '' }}
+        onOpenHistory={() => { leavePublicReplay() }}
         onShare={() => void sharePublicLink()}
         replayMode
         replayDurationSeconds={Math.floor((attempt?.durationMs ?? 0) / 1000)}
-        onExitReplay={() => { window.location.hash = '' }}
+        onExitReplay={() => { leavePublicReplay() }}
       />
       {status !== 'ready' || !attempt || !frame ? (
         <PublicReplayState
           locale={locale}
           status={status === 'error' ? 'error' : 'loading'}
           error={error}
-          onRetry={() => {
-            setStatus('loading')
-            setError(null)
-            void replayClient.get(id).then((record) => {
-              setAttempt(verifyImportedAttempt(record.envelope.replay.attempt))
-              setStatus('ready')
-            }).catch((caught) => {
-              const next = caught as PublicReplayError
-              setError({
-                code: next?.code ?? 'unavailable',
-                message: next?.message ?? 'The replay service is unavailable.',
-              })
-              setStatus('error')
-            })
-          }}
+          onRetry={() => setRetryToken((value) => value + 1)}
         />
       ) : (
         <div className="workspace">

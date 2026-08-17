@@ -40,12 +40,13 @@ func main() {
 		logger.Error("migration failed", "event", "migration_error", "err", err)
 		os.Exit(1)
 	}
-	handler := httpapi.New(cfg, service.NewPublicReplayService(repository.NewPublicReplayRepository(db), cfg.PublicShareBase), logger)
+	handler := httpapi.New(cfg, service.NewPublicReplayService(repository.NewPublicReplayRepository(db), cfg.PublicShareBase, cfg.MaxStoredReplays, cfg.MaxStoredBytes), logger)
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
 		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       15 * time.Second,
+		ReadTimeout:       cfg.ReadTimeout,
+		WriteTimeout:      cfg.WriteTimeout,
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

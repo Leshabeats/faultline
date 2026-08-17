@@ -53,3 +53,10 @@ func TestLoadReadsDotEnvWithoutOverridingProcessEnv(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsMalformedNumericEnv(t *testing.T) {
+	t.Setenv("FAULTLINE_RATE_LIMIT_PER_MINUTE", "ten")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected malformed numeric env to fail")
+	}
+}
+

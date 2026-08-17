@@ -114,6 +114,10 @@ func (s *Server) mapError(w http.ResponseWriter, err error) {
 		s.writeError(w, http.StatusUnauthorized, "unauthorized", "This replay cannot be deleted with the provided token.")
 		return
 	}
+	if service.IsQuotaExceeded(err) {
+		s.writeError(w, http.StatusInsufficientStorage, "storage-quota", "Public replay storage is full. Delete an older replay and try again.")
+		return
+	}
 	s.logger.Error("public replay request failed", "event", "public_replay_error", "err", err)
 	s.writeError(w, http.StatusInternalServerError, "unavailable", "The replay service is unavailable.")
 }
