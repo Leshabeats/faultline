@@ -1119,22 +1119,7 @@ export function App() {
         publishedAt: new Date().toISOString(),
       })
       setCapabilitiesVersion((value) => value + 1)
-      if (publishAttemptRef.current?.id !== attemptId) return
-      setPublishUrl(url)
-      setPublishStatus('ready')
-      if (persisted) {
-        addEvent(copy.replayPublished, copy.publicLinkReady, 'healthy', {
-          en: {
-            title: applicationCopy.en.replayPublished,
-            detail: applicationCopy.en.publicLinkReady,
-          },
-          ru: {
-            title: applicationCopy.ru.replayPublished,
-            detail: applicationCopy.ru.publicLinkReady,
-          },
-        })
-      } else {
-        setPublishError(`${copy.capabilityNotSaved}. ${copy.capabilityNotSavedDetail}`)
+      if (!persisted) {
         addEvent(copy.capabilityNotSaved, copy.capabilityNotSavedDetail, 'warning', {
           en: {
             title: applicationCopy.en.capabilityNotSaved,
@@ -1145,17 +1130,34 @@ export function App() {
             detail: applicationCopy.ru.capabilityNotSavedDetail,
           },
         })
+      } else {
+        addEvent(copy.replayPublished, copy.publicLinkReady, 'healthy', {
+          en: {
+            title: applicationCopy.en.replayPublished,
+            detail: applicationCopy.en.publicLinkReady,
+          },
+          ru: {
+            title: applicationCopy.ru.replayPublished,
+            detail: applicationCopy.ru.publicLinkReady,
+          },
+        })
+      }
+      if (publishAttemptRef.current?.id !== attemptId) return
+      setPublishUrl(url)
+      setPublishStatus('ready')
+      if (!persisted) {
+        setPublishError(`${copy.capabilityNotSaved}. ${copy.capabilityNotSavedDetail}`)
       }
     } catch (caught) {
-      if (publishAttemptRef.current?.id !== attemptId) {
-        addEvent(copy.publishFailed, copy.publishUnavailable, 'warning')
-        return
-      }
       const error = caught as PublicReplayError
       const message = publishErrorCopy({
         code: error?.code ?? 'unavailable',
         message: error?.message ?? copy.publishUnavailable,
       })
+      if (publishAttemptRef.current?.id !== attemptId) {
+        addEvent(copy.publishFailed, message, 'warning')
+        return
+      }
       setPublishError(message)
       setPublishStatus('error')
       addEvent(copy.publishFailed, message, 'warning')
