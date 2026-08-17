@@ -38,6 +38,14 @@ export function publicReplayStateCopy(
         : 'This public replay version is not supported yet.',
     }
   }
+  if (error?.code === 'rate-limited') {
+    return {
+      title: ru ? 'Слишком много запросов' : 'Too many requests',
+      detail: ru
+        ? 'Публичный повтор временно ограничен. Подождите немного и откройте ссылку снова.'
+        : 'This public replay is temporarily rate-limited. Wait a moment and open the link again.',
+    }
+  }
   return {
     title: ru ? 'Не удалось открыть повтор' : 'Could not open replay',
     detail: ru

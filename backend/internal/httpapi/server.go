@@ -195,7 +195,7 @@ func (s *Server) limitBody(next http.Handler) http.Handler {
 func (s *Server) rateLimit(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !s.limiter.allow(clientIP(r)) {
-			s.writeError(w, http.StatusTooManyRequests, "rate-limited", "Too many publish requests. Try again shortly.")
+			s.writeError(w, http.StatusTooManyRequests, "rate-limited", "Too many replay requests. Try again shortly.")
 			return
 		}
 		next.ServeHTTP(w, r)

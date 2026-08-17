@@ -29,4 +29,17 @@ describe('public replay states', () => {
     expect(html).toContain('Unsupported version')
     expect(html).not.toContain('Replay not found')
   })
+
+  it('keeps a throttled public replay distinct from an outage', () => {
+    const html = renderToStaticMarkup(
+      <PublicReplayState
+        locale="en"
+        status="error"
+        error={{ code: 'rate-limited', message: 'slow down' }}
+        onRetry={vi.fn()}
+      />,
+    )
+    expect(html).toContain('Too many requests')
+    expect(html).not.toContain('Start the local backend')
+  })
 })
