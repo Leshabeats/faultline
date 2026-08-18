@@ -93,6 +93,7 @@ describe('FetchPublicReplayClient', () => {
       send() { this.onload?.() }
     }
     vi.stubGlobal('fetch', undefined)
+    vi.stubGlobal('Response', undefined)
     vi.stubGlobal('XMLHttpRequest', vi.fn(() => new FakeXHR()))
 
     const client = new FetchPublicReplayClient('http://127.0.0.1:8787')

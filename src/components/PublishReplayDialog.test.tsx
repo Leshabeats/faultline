@@ -58,4 +58,27 @@ describe('PublishReplayDialog', () => {
     expect(html).toContain('#/r/AbCdEfGhIjKlMnOpQrStUv')
     expect(html).toContain('Open link')
   })
+
+  it('disables unpublish while the delete request is in flight', () => {
+    const html = renderToStaticMarkup(
+      <PublishReplayDialog
+        locale="en"
+        open
+        preview={preview}
+        challengeTitle="URL Shortener"
+        status="ready"
+        publicUrl="http://127.0.0.1:4173/#/r/AbCdEfGhIjKlMnOpQrStUv"
+        copied={false}
+        unpublishing
+        onClose={vi.fn()}
+        onConfirm={vi.fn()}
+        onRetry={vi.fn()}
+        onCopy={vi.fn()}
+        onUnpublish={vi.fn()}
+      />,
+    )
+
+    expect(html).toContain('Removing…')
+    expect(html).toMatch(/publish-unpublish[^>]*disabled/)
+  })
 })

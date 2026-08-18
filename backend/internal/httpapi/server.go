@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
+	"strings"
 	"sync"
 	"time"
 
@@ -203,7 +205,8 @@ func (s *Server) limitBody(next http.Handler) http.Handler {
 
 func (s *Server) rateLimit(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !s.limiter.allow(clientIP(r)) {
+		key := r.Method + ":" + clientIP(r, s.cfg.TrustedProxyCIDRs)
+		if !s.limiter.allow(key) {
 			s.writeError(w, http.StatusTooManyRequests, "rate-limited", "Too many replay requests. Try again shortly.")
 			return
 		}
@@ -211,12 +214,59 @@ func (s *Server) rateLimit(next http.Handler) http.Handler {
 	})
 }
 
-func clientIP(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
+func clientIP(r *http.Request, trustedProxies []netip.Prefix) string {
+	peer, ok := parseRemoteAddress(r.RemoteAddr)
+	if !ok {
 		return r.RemoteAddr
 	}
-	return host
+	if !addressInPrefixes(peer, trustedProxies) {
+		return peer.String()
+	}
+
+	forwarded := r.Header.Values("X-Forwarded-For")
+	if len(forwarded) == 0 {
+		return peer.String()
+	}
+	chain := make([]netip.Addr, 0, len(forwarded)+1)
+	for _, header := range forwarded {
+		for _, item := range strings.Split(header, ",") {
+			address, err := netip.ParseAddr(strings.TrimSpace(item))
+			if err != nil {
+				return peer.String()
+			}
+			chain = append(chain, address.Unmap())
+		}
+	}
+	chain = append(chain, peer)
+	for index := len(chain) - 1; index >= 0; index-- {
+		if !addressInPrefixes(chain[index], trustedProxies) {
+			return chain[index].String()
+		}
+	}
+	return chain[0].String()
+}
+
+func parseRemoteAddress(remote string) (netip.Addr, bool) {
+	if host, _, err := net.SplitHostPort(remote); err == nil {
+		address, parseErr := netip.ParseAddr(host)
+		if parseErr == nil {
+			return address.Unmap(), true
+		}
+	}
+	address, err := netip.ParseAddr(strings.Trim(remote, "[]"))
+	if err != nil {
+		return netip.Addr{}, false
+	}
+	return address.Unmap(), true
+}
+
+func addressInPrefixes(address netip.Addr, prefixes []netip.Prefix) bool {
+	for _, prefix := range prefixes {
+		if prefix.Contains(address) {
+			return true
+		}
+	}
+	return false
 }
 
 func readLimitedBody(r *http.Request, max int64) ([]byte, error) {

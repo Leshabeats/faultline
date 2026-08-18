@@ -81,3 +81,27 @@ func TestInsertGuardedRejectsOverCap(t *testing.T) {
 		t.Fatalf("over-quota insert should not persist, got %v", err)
 	}
 }
+
+func TestInsertGuardedMeasuresUTF8PayloadsInBytes(t *testing.T) {
+	repo := NewPublicReplayRepository(testDB(t))
+	record := replaystore.Record{
+		ID:              "id-utf8-1",
+		CreatedAt:       time.Date(2026, 8, 17, 10, 0, 0, 0, time.UTC),
+		EnvelopeJSON:    []byte(`{"label":"Привет"}`),
+		DeleteTokenHash: replaystore.HashDeleteToken("secret-token"),
+	}
+	if err := repo.InsertGuarded(record, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	second := record
+	second.ID = "id-utf8-2"
+	if err := repo.InsertGuarded(second, func(usage replaystore.Usage) error {
+		if usage.Bytes != int64(len(record.EnvelopeJSON)) {
+			t.Fatalf("expected %d UTF-8 bytes, got %d", len(record.EnvelopeJSON), usage.Bytes)
+		}
+		return replaystore.ErrStorageQuota
+	}); !errors.Is(err, replaystore.ErrStorageQuota) {
+		t.Fatalf("expected guard sentinel, got %v", err)
+	}
+}

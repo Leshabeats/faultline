@@ -54,6 +54,8 @@ export const applicationCopy = {
     publicLinkReadyToShare: 'Anyone with this URL can open the replay',
     capabilityNotSaved: 'Could not remember the delete token on this device',
     capabilityNotSavedDetail: 'The public link still works. Copy it now; unpublish may be unavailable after reload.',
+    capabilityCleanupFailed: 'Could not remove the saved delete token from this device',
+    capabilityCleanupFailedDetail: 'The public replay is already unavailable. Clear this site’s data if the old link returns after reload.',
   },
   ru: {
     componentRemoved: 'Компонент удалён',
@@ -97,6 +99,8 @@ export const applicationCopy = {
     publicLinkReadyToShare: 'По этой ссылке повтор откроется без авторизации',
     capabilityNotSaved: 'Не удалось сохранить токен удаления на этом устройстве',
     capabilityNotSavedDetail: 'Публичная ссылка уже работает. Скопируйте её сейчас: после перезагрузки снять публикацию, возможно, не получится.',
+    capabilityCleanupFailed: 'Не удалось удалить сохранённый токен с этого устройства',
+    capabilityCleanupFailedDetail: 'Публичный повтор уже недоступен. Очистите данные сайта, если старая ссылка появится после перезагрузки.',
   },
 } as const
 

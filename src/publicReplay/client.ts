@@ -26,7 +26,13 @@ const asError = (
   message: string,
 ): PublicReplayError => ({ code, message })
 
-const readError = async (response: Response): Promise<PublicReplayError> => {
+interface HttpResponse {
+  ok: boolean
+  status: number
+  json(): Promise<unknown>
+}
+
+const readError = async (response: HttpResponse): Promise<PublicReplayError> => {
   let parsed: unknown
   try {
     parsed = await response.json()
@@ -132,7 +138,7 @@ export class FetchPublicReplayClient implements PublicReplayClient {
   }
 }
 
-function xhrRequest(url: string, init?: RequestInit): Promise<Response> {
+function xhrRequest(url: string, init?: RequestInit): Promise<HttpResponse> {
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest()
     request.open(init?.method ?? 'GET', url)
@@ -143,11 +149,11 @@ function xhrRequest(url: string, init?: RequestInit): Promise<Response> {
       })
     }
     request.onload = () => {
-      resolve(new Response(request.responseText, {
+      resolve({
+        ok: request.status >= 200 && request.status < 300,
         status: request.status,
-        statusText: request.statusText,
-        headers: { 'content-type': request.getResponseHeader('content-type') ?? 'application/json' },
-      }))
+        json: async () => JSON.parse(request.responseText) as unknown,
+      })
     }
     request.onerror = () => reject(new TypeError('Network request failed'))
     request.send(typeof init?.body === 'string' ? init.body : null)

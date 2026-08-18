@@ -4,7 +4,6 @@ import type { StoredReplayCapability } from './types'
 const SCHEMA = 'faultline.public-replay-capabilities' as const
 const VERSION = 1 as const
 export const DEFAULT_PUBLIC_REPLAY_CAPABILITY_KEY = 'faultline.public-replay-capabilities.v1'
-const MAX_STORED = 50
 
 interface CapabilityDocument {
   schema: typeof SCHEMA
@@ -29,6 +28,7 @@ export class PublicReplayCapabilityStore {
     private readonly key = DEFAULT_PUBLIC_REPLAY_CAPABILITY_KEY,
   ) {}
   private memoryItems: StoredReplayCapability[] | null = null
+  private removedPublicIds = new Set<string>()
 
   list(): StoredReplayCapability[] {
     return this.mergeStored(this.memoryItems ?? [])
@@ -52,7 +52,7 @@ export class PublicReplayCapabilityStore {
       ) {
         return []
       }
-      return parsed.items.filter(isCapability).slice(0, MAX_STORED)
+      return parsed.items.filter(isCapability)
     } catch {
       return []
     }
@@ -61,11 +61,14 @@ export class PublicReplayCapabilityStore {
   private mergeStored(sessionItems: StoredReplayCapability[]) {
     const merged = new Map<string, StoredReplayCapability>()
     for (const item of [...this.readStored(), ...sessionItems]) {
-      merged.set(item.publicId, item)
+      if (!this.removedPublicIds.has(item.publicId)) {
+        merged.set(item.publicId, item)
+      }
     }
+    // A public record outlives this browser entry, and its delete token cannot
+    // be recovered from the API. Never truncate capabilities implicitly.
     const items = [...merged.values()]
       .sort((left, right) => right.publishedAt.localeCompare(left.publishedAt))
-      .slice(0, MAX_STORED)
     this.memoryItems = items
     return items
   }
@@ -79,18 +82,20 @@ export class PublicReplayCapabilityStore {
   }
 
   save(capability: StoredReplayCapability): boolean {
+    this.removedPublicIds.delete(capability.publicId)
     const items = [
       capability,
       ...this.mergeStored(this.memoryItems ?? []).filter((item) => (
         item.publicId !== capability.publicId && item.attemptId !== capability.attemptId
       )),
-    ].slice(0, MAX_STORED)
+    ]
     this.memoryItems = items
     return this.persist(items)
   }
 
   remove(publicId: string): boolean {
-    const items = this.mergeStored(this.memoryItems ?? []).filter((item) => item.publicId !== publicId)
+    this.removedPublicIds.add(publicId)
+    const items = this.mergeStored(this.memoryItems ?? [])
     this.memoryItems = items
     if (items.length === 0) {
       try {

@@ -29,7 +29,7 @@ func (r *PublicReplayRepository) InsertGuarded(record replaystore.Record, guard 
 	}
 	var usage replaystore.Usage
 	if err := tx.QueryRow(`
-SELECT COUNT(1), COALESCE(SUM(LENGTH(envelope_json)), 0)
+SELECT COUNT(1), COALESCE(SUM(LENGTH(CAST(envelope_json AS BLOB))), 0)
 FROM public_replays
 `).Scan(&usage.Records, &usage.Bytes); err != nil {
 		return err

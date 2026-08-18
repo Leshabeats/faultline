@@ -20,6 +20,8 @@ The process listens on `127.0.0.1:8787` by default, applies SQLite migrations on
 
 See [`.env.example`](.env.example). Copy it to `backend/.env` or a process-local `.env`; `config.Load` reads that file before applying environment variables. Existing exported variables still win. `FAULTLINE_MAX_STORED_REPLAYS` and `FAULTLINE_MAX_STORED_BYTES` cap unauthenticated storage. In production, `FAULTLINE_CORS_ORIGINS` cannot include `*`.
 
+When a reverse proxy terminates client connections, set `FAULTLINE_TRUSTED_PROXY_CIDRS` to the proxy network(s). Only those peers may supply `X-Forwarded-For`; direct clients cannot spoof another rate-limit identity. Configure the proxy to sanitize or replace inbound forwarding headers. Without a reverse proxy, leave the value empty.
+
 ## Docker
 
 ```bash

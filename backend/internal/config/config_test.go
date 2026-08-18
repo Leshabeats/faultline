@@ -60,3 +60,20 @@ func TestLoadRejectsMalformedNumericEnv(t *testing.T) {
 	}
 }
 
+func TestLoadParsesTrustedProxyCIDRs(t *testing.T) {
+	t.Setenv("FAULTLINE_TRUSTED_PROXY_CIDRS", "127.0.0.1/32, 10.0.0.0/8")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.TrustedProxyCIDRs) != 2 || cfg.TrustedProxyCIDRs[1].String() != "10.0.0.0/8" {
+		t.Fatalf("unexpected trusted proxies: %#v", cfg.TrustedProxyCIDRs)
+	}
+}
+
+func TestLoadRejectsInvalidTrustedProxyCIDR(t *testing.T) {
+	t.Setenv("FAULTLINE_TRUSTED_PROXY_CIDRS", "127.0.0.1")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected invalid trusted proxy CIDR to fail")
+	}
+}

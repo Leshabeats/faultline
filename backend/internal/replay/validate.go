@@ -198,6 +198,10 @@ func validateAttempt(attempt ReplayAttempt) error {
 	if err := validateOptionalInitial(attempt.Initial); err != nil {
 		return err
 	}
+	readReplicas, err := capacityReadReplicas(attempt.Initial.Capacity)
+	if err != nil || !databaseReplicationMatches(attempt.Initial.Architecture.Nodes, readReplicas) {
+		return invalidReplay()
+	}
 	if err := validateSummary(attempt.Summary, attempt.DurationMs); err != nil {
 		return err
 	}
@@ -229,9 +233,8 @@ func validateAttempt(attempt ReplayAttempt) error {
 	if len(attempt.Events) > 0 && minAt != 0 {
 		return invalidReplay()
 	}
-	return nil
+	return validateReplaySequence(attempt.Initial.Architecture, attempt.Events)
 }
-
 
 func validateOptionalInitial(initial ReplayInitial) error {
 	if len(initial.Capacity) > 0 && !isJSONNull(initial.Capacity) {
@@ -654,7 +657,6 @@ func isLoad(value any) bool {
 	load, ok := asInt(value)
 	return ok && contains([]int{1, 3, 10}, load)
 }
-
 
 func isStoredNode(node ReplayNode) bool {
 	if !bounded(node.ID) || node.Type != "system" || !isPosition(node.Position) || !isComponentKind(node.Data.Kind) || !bounded(node.Data.Label) {
