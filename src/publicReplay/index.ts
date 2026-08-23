@@ -43,3 +43,10 @@ export {
 } from './publishTarget'
 export { publicReplayShareUrl } from './shareLink'
 export { publicReplayErrorCopy } from './errors'
+export {
+  UnpublishOperationGate,
+  unpublishPublicReplay,
+  unpublishResultTargetsActiveAttempt,
+  type UnpublishOperation,
+  type UnpublishReplayResult,
+} from './unpublish'

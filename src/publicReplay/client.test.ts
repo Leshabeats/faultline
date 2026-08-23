@@ -35,6 +35,7 @@ const envelope = {
 }
 
 afterEach(() => {
+  vi.useRealTimers()
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
@@ -93,6 +94,7 @@ describe('FetchPublicReplayClient', () => {
       send() { this.onload?.() }
     }
     vi.stubGlobal('fetch', undefined)
+    vi.stubGlobal('Response', undefined)
     vi.stubGlobal('XMLHttpRequest', vi.fn(() => new FakeXHR()))
 
     const client = new FetchPublicReplayClient('http://127.0.0.1:8787')
@@ -101,5 +103,22 @@ describe('FetchPublicReplayClient', () => {
       deleteToken: 'token',
     })
     expect(XMLHttpRequest).toHaveBeenCalledOnce()
+  })
+
+  it('times out a delete request that never completes', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('fetch', vi.fn((_url: string | URL | Request, init?: RequestInit) => (
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          reject(new DOMException('Request aborted', 'AbortError'))
+        }, { once: true })
+      })
+    )))
+
+    const client = new FetchPublicReplayClient('http://127.0.0.1:8787', 25)
+    const deletion = client.remove('pub-1', 'token-1')
+    const expectation = expect(deletion).rejects.toMatchObject({ code: 'unavailable' })
+    await vi.advanceTimersByTimeAsync(25)
+    await expectation
   })
 })

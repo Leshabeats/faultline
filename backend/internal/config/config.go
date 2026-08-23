@@ -3,6 +3,7 @@ package config
 import (
 	"bufio"
 	"fmt"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -16,6 +17,7 @@ type Config struct {
 	SQLitePath         string
 	PublicShareBase    string
 	CORSOrigins        []string
+	TrustedProxyCIDRs  []netip.Prefix
 	MaxBodyBytes       int64
 	RateLimitPerMinute int
 	MaxStoredReplays   int
@@ -44,12 +46,17 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	trustedProxyCIDRs, err := parseCIDRs(getenv("FAULTLINE_TRUSTED_PROXY_CIDRS", ""))
+	if err != nil {
+		return Config{}, err
+	}
 	cfg := Config{
 		Env:                getenv("FAULTLINE_ENV", "development"),
 		HTTPAddr:           getenv("FAULTLINE_HTTP_ADDR", "127.0.0.1:8787"),
 		SQLitePath:         getenv("FAULTLINE_SQLITE_PATH", "./data/faultline.db"),
 		PublicShareBase:    strings.TrimRight(getenv("FAULTLINE_PUBLIC_SHARE_BASE", "http://127.0.0.1:4173"), "/"),
 		CORSOrigins:        splitCSV(getenv("FAULTLINE_CORS_ORIGINS", "http://127.0.0.1:4173,http://localhost:4173")),
+		TrustedProxyCIDRs:  trustedProxyCIDRs,
 		MaxBodyBytes:       int64(maxBodyBytes),
 		RateLimitPerMinute: rateLimit,
 		MaxStoredReplays:   maxStored,
@@ -116,6 +123,19 @@ func splitCSV(raw string) []string {
 		}
 	}
 	return out
+}
+
+func parseCIDRs(raw string) ([]netip.Prefix, error) {
+	values := splitCSV(raw)
+	prefixes := make([]netip.Prefix, 0, len(values))
+	for _, value := range values {
+		prefix, err := netip.ParsePrefix(value)
+		if err != nil {
+			return nil, fmt.Errorf("FAULTLINE_TRUSTED_PROXY_CIDRS contains invalid CIDR %q", value)
+		}
+		prefixes = append(prefixes, prefix.Masked())
+	}
+	return prefixes, nil
 }
 
 func contains(values []string, wanted string) bool {

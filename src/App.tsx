@@ -96,6 +96,9 @@ import {
   nextPublishRetry,
   publicReplayErrorCopy,
   resolvePublishAttempt,
+  UnpublishOperationGate,
+  unpublishPublicReplay,
+  unpublishResultTargetsActiveAttempt,
   type PublicReplayError,
 } from './publicReplay'
 
@@ -180,6 +183,8 @@ export function App() {
   const [publishError, setPublishError] = useState<string>()
   const [publishCopied, setPublishCopied] = useState(false)
   const [publishAction, setPublishAction] = useState<'publish' | 'unpublish'>('publish')
+  const [publishUnpublishing, setPublishUnpublishing] = useState(false)
+  const unpublishOperationsRef = useRef(new UnpublishOperationGate())
   const [lastSubmittedAttempt, setLastSubmittedAttempt] = useState<ReplayAttemptV1 | null>(null)
   const [savedAttempts, setSavedAttempts] = useState<ReplayAttemptV1[]>(() => {
     try {
@@ -1086,6 +1091,15 @@ export function App() {
     return publicReplayErrorCopy(locale, error)
   }, [locale])
 
+  const cancelUnpublish = useCallback(() => {
+    unpublishOperationsRef.current.cancel()
+    setPublishUnpublishing(false)
+  }, [])
+
+  useEffect(() => () => {
+    unpublishOperationsRef.current.cancel()
+  }, [])
+
   const openPublish = useCallback((attemptId: string) => {
     const attempt = resolvePublishAttempt(attemptId, [
       lastSubmittedAttempt,
@@ -1093,6 +1107,7 @@ export function App() {
       ...savedAttempts,
     ])
     if (!attempt) return
+    cancelUnpublish()
     const existing = capabilityStore.getByAttemptId(attempt.id)
     setPublishAttempt(attempt)
     setPublishStatus(existing ? 'ready' : 'confirm')
@@ -1100,7 +1115,7 @@ export function App() {
     setPublishError(undefined)
     setPublishCopied(false)
     setPublishAction('publish')
-  }, [capabilityStore, lastSubmittedAttempt, replayAttempt, savedAttempts])
+  }, [cancelUnpublish, capabilityStore, lastSubmittedAttempt, replayAttempt, savedAttempts])
 
   const confirmPublish = useCallback(async () => {
     if (!publishAttempt) return
@@ -1178,28 +1193,79 @@ export function App() {
 
   const unpublishReplay = useCallback(async () => {
     if (!publishAttempt) return
-    const existing = capabilityStore.getByAttemptId(publishAttempt.id)
+    const attemptId = publishAttempt.id
+    const existing = capabilityStore.getByAttemptId(attemptId)
     if (!existing) return
+    const operation = unpublishOperationsRef.current.start(attemptId)
+    if (!operation) return
+    setPublishUnpublishing(true)
     setPublishAction('unpublish')
     setPublishError(undefined)
     try {
-      await publicReplayClient.remove(existing.publicId, existing.deleteToken)
-      capabilityStore.remove(existing.publicId)
+      const result = await unpublishPublicReplay(
+        publicReplayClient,
+        capabilityStore,
+        existing,
+        operation.controller.signal,
+      )
+      const targetsActiveAttempt = unpublishResultTargetsActiveAttempt(
+        publishAttemptRef.current?.id,
+        attemptId,
+        unpublishOperationsRef.current.isCurrent(operation),
+      )
+      if (!result.ok) {
+        if (!targetsActiveAttempt) return
+        const message = publishErrorCopy({
+          code: result.error?.code ?? 'unavailable',
+          message: result.error?.message ?? copy.publishUnavailable,
+        })
+        setPublishError(message)
+        setPublishStatus('error')
+        return
+      }
+
       setCapabilitiesVersion((value) => value + 1)
+      addEvent(copy.replayUnpublished, copy.publicLinkRemoved, 'healthy')
+      const cleanupWarning = result.cleanupPersisted
+        ? undefined
+        : `${copy.capabilityCleanupFailed}. ${copy.capabilityCleanupFailedDetail}`
+      if (cleanupWarning) {
+        addEvent(copy.capabilityCleanupFailed, copy.capabilityCleanupFailedDetail, 'warning')
+      }
+      if (!targetsActiveAttempt) return
       setPublishUrl(undefined)
       setPublishStatus('confirm')
-      setPublishError(undefined)
-      addEvent(copy.replayUnpublished, copy.publicLinkRemoved, 'healthy')
+      setPublishError(cleanupWarning)
     } catch (caught) {
       const error = caught as PublicReplayError
+      if (!unpublishResultTargetsActiveAttempt(
+        publishAttemptRef.current?.id,
+        attemptId,
+        unpublishOperationsRef.current.isCurrent(operation),
+      )) return
       const message = publishErrorCopy({
         code: error?.code ?? 'unavailable',
         message: error?.message ?? copy.publishUnavailable,
       })
       setPublishError(message)
       setPublishStatus('error')
+    } finally {
+      if (unpublishOperationsRef.current.finish(operation)) {
+        setPublishUnpublishing(false)
+      }
     }
-  }, [addEvent, capabilityStore, copy.publicLinkRemoved, copy.publishUnavailable, copy.replayUnpublished, publishAttempt, publishErrorCopy, publicReplayClient])
+  }, [
+    addEvent,
+    capabilityStore,
+    copy.capabilityCleanupFailed,
+    copy.capabilityCleanupFailedDetail,
+    copy.publicLinkRemoved,
+    copy.publishUnavailable,
+    copy.replayUnpublished,
+    publishAttempt,
+    publishErrorCopy,
+    publicReplayClient,
+  ])
 
   const copyPublicLink = useCallback(async () => {
     if (!publishUrl) return
@@ -1565,7 +1631,9 @@ export function App() {
         publicUrl={publishUrl}
         error={publishError}
         copied={publishCopied}
+        unpublishing={publishUnpublishing}
         onClose={() => {
+          cancelUnpublish()
           setPublishAttempt(null)
           setPublishStatus('confirm')
           setPublishCopied(false)

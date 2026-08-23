@@ -96,4 +96,48 @@ describe('public replay capability store', () => {
     expect(second.getByPublicId('pub-b')?.deleteToken).toBe('token-b')
     expect(first.list().map((item) => item.publicId).sort()).toEqual(['pub-a', 'pub-b'])
   })
+
+  it('never evicts an older delete token while its replay can still be public', () => {
+    const store = new PublicReplayCapabilityStore(memory())
+    for (let index = 0; index < 60; index += 1) {
+      store.save({
+        publicId: `pub-${index}`,
+        attemptId: `attempt-${index}`,
+        url: `http://127.0.0.1:4173/#/r/pub-${index}`,
+        deleteToken: `token-${index}`,
+        publishedAt: new Date(Date.UTC(2026, 7, 17, 10, index)).toISOString(),
+      })
+    }
+
+    expect(store.list()).toHaveLength(60)
+    expect(store.getByPublicId('pub-0')?.deleteToken).toBe('token-0')
+  })
+
+  it('keeps a removed capability hidden in-session when persistent cleanup fails', () => {
+    const values = new Map<string, string>()
+    let rejectWrites = false
+    const store = new PublicReplayCapabilityStore({
+      getItem: (key) => values.get(key) ?? null,
+      setItem: (key, value) => {
+        if (rejectWrites) throw new Error('storage blocked')
+        values.set(key, value)
+      },
+      removeItem: (key) => {
+        if (rejectWrites) throw new Error('storage blocked')
+        values.delete(key)
+      },
+    })
+    store.save({
+      publicId: 'pub-stale',
+      attemptId: 'attempt-stale',
+      url: 'http://127.0.0.1:4173/#/r/pub-stale',
+      deleteToken: 'token-stale',
+      publishedAt: '2026-08-17T10:00:00.000Z',
+    })
+
+    rejectWrites = true
+    expect(store.remove('pub-stale')).toBe(false)
+    expect(store.getByPublicId('pub-stale')).toBeUndefined()
+    expect(store.getByAttemptId('attempt-stale')).toBeUndefined()
+  })
 })

@@ -183,3 +183,66 @@ func TestParseAndValidatePublicRejectsMalformedNodeShape(t *testing.T) {
 	}
 }
 
+func TestParseAndValidatePublicRejectsDatabaseReplicaMismatch(t *testing.T) {
+	raw := strings.Replace(
+		validEnvelope(),
+		`"data": {"kind": "database", "label": "Primary DB"}`,
+		`"data": {"kind": "database", "label": "Primary DB", "replicas": 3}`,
+		1,
+	)
+	raw = strings.Replace(
+		raw,
+		`"fault": "none"`,
+		`"fault": "none", "capacity": {"cacheHitRate":0.95,"indexedLookup":true,"poolSize":300,"readReplicas":0,"databaseProfile":"balanced"}`,
+		1,
+	)
+	_, _, err := ParseAndValidatePublic([]byte(raw))
+	assertReplayErrorCode(t, err, "invalid-replay")
+}
+
+func TestParseAndValidatePublicRejectsDanglingEventFaultTarget(t *testing.T) {
+	raw := strings.Replace(
+		validEnvelope(),
+		`"events": [`,
+		`"events": [{"id":"dangling-fault","atMs":1000,"sequence":10,"source":"user","type":"fault.changed","payload":{"fault":"component-outage","targetNodeId":"missing"}},`,
+		1,
+	)
+	_, _, err := ParseAndValidatePublic([]byte(raw))
+	assertReplayErrorCode(t, err, "invalid-replay")
+}
+
+func TestParseAndValidatePublicTracksTopologyBeforeFaultTargets(t *testing.T) {
+	removed := strings.Replace(
+		validEnvelope(),
+		`"events": [`,
+		`"events": [`+
+			`{"id":"remove-db","atMs":1000,"sequence":10,"source":"user","type":"node.removed","payload":{"nodeId":"database"}},`+
+			`{"id":"fault-db","atMs":2000,"sequence":11,"source":"user","type":"fault.changed","payload":{"fault":"component-outage","targetNodeId":"database"}},`,
+		1,
+	)
+	_, _, err := ParseAndValidatePublic([]byte(removed))
+	assertReplayErrorCode(t, err, "invalid-replay")
+
+	added := strings.Replace(
+		validEnvelope(),
+		`"events": [`,
+		`"events": [`+
+			`{"id":"add-cache","atMs":1000,"sequence":10,"source":"user","type":"node.added","payload":{"node":{"id":"cache","type":"system","position":{"x":250,"y":20},"data":{"kind":"cache","label":"Redis"}}}},`+
+			`{"id":"fault-cache","atMs":2000,"sequence":11,"source":"user","type":"fault.changed","payload":{"fault":"component-outage","targetNodeId":"cache"}},`,
+		1,
+	)
+	if _, _, err := ParseAndValidatePublic([]byte(added)); err != nil {
+		t.Fatalf("expected target added earlier in playback to be valid, got %v", err)
+	}
+}
+
+func assertReplayErrorCode(t *testing.T, err error, code string) {
+	t.Helper()
+	if err == nil {
+		t.Fatalf("expected %s error", code)
+	}
+	replayErr, ok := err.(*Error)
+	if !ok || replayErr.Code != code {
+		t.Fatalf("expected %s, got %#v", code, err)
+	}
+}
