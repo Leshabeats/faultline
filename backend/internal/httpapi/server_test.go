@@ -275,10 +275,14 @@ func TestClientIPSkipsMalformedHopsBehindTrustedProxy(t *testing.T) {
 	tests := []struct {
 		name      string
 		forwarded string
+		want      string
 	}{
-		{name: "garbage prepended by client", forwarded: "bogus, 203.0.113.9"},
-		{name: "empty hop prepended by client", forwarded: ", 203.0.113.9"},
-		{name: "garbage inside trusted chain", forwarded: "203.0.113.9, bogus, 10.1.2.3"},
+		{name: "garbage prepended by client", forwarded: "bogus, 203.0.113.9", want: "203.0.113.9"},
+		{name: "empty hop prepended by client", forwarded: ", 203.0.113.9", want: "203.0.113.9"},
+		{name: "garbage inside trusted chain", forwarded: "203.0.113.9, bogus, 10.1.2.3", want: "203.0.113.9"},
+		{name: "IPv4 client port", forwarded: "198.51.100.8:4321", want: "198.51.100.8"},
+		{name: "IPv6 client port", forwarded: "[2001:db8::8]:4321", want: "2001:db8::8"},
+		{name: "ports throughout trusted chain", forwarded: "198.51.100.8:4321, 10.1.2.3:8443", want: "198.51.100.8"},
 	}
 
 	for _, test := range tests {
@@ -286,8 +290,8 @@ func TestClientIPSkipsMalformedHopsBehindTrustedProxy(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
 			req.RemoteAddr = "127.0.0.1:4321"
 			req.Header.Set("X-Forwarded-For", test.forwarded)
-			if got := clientIP(req, trusted); got != "203.0.113.9" {
-				t.Fatalf("malformed hop hid forwarded client identity: %s", got)
+			if got := clientIP(req, trusted); got != test.want {
+				t.Fatalf("forwarded hop hid client identity: %s", got)
 			}
 		})
 	}
