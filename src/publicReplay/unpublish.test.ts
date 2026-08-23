@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { StoredReplayCapability } from './types'
 import {
+  UnpublishOperationGate,
   unpublishPublicReplay,
   unpublishResultTargetsActiveAttempt,
 } from './unpublish'
@@ -55,5 +56,36 @@ describe('unpublish public replay', () => {
     expect(unpublishResultTargetsActiveAttempt('attempt-1', 'attempt-1')).toBe(true)
     expect(unpublishResultTargetsActiveAttempt('attempt-2', 'attempt-1')).toBe(false)
     expect(unpublishResultTargetsActiveAttempt(undefined, 'attempt-1')).toBe(false)
+    expect(unpublishResultTargetsActiveAttempt('attempt-1', 'attempt-1', false)).toBe(false)
+  })
+
+  it('forwards cancellation to the remote delete request', async () => {
+    const controller = new AbortController()
+    const removeRemote = vi.fn(async () => undefined)
+
+    await unpublishPublicReplay(
+      { remove: removeRemote },
+      { remove: vi.fn(() => true) },
+      capability,
+      controller.signal,
+    )
+
+    expect(removeRemote).toHaveBeenCalledWith('pub-1', 'token-1', controller.signal)
+  })
+
+  it('cancels a hung operation without letting it finish a newer one', () => {
+    const operations = new UnpublishOperationGate()
+    const first = operations.start('attempt-1')
+    expect(first).not.toBeNull()
+    expect(operations.start('attempt-1')).toBeNull()
+
+    operations.cancel()
+    expect(first?.controller.signal.aborted).toBe(true)
+
+    const second = operations.start('attempt-1')
+    expect(second).not.toBeNull()
+    expect(first && operations.finish(first)).toBe(false)
+    expect(second && operations.isCurrent(second)).toBe(true)
+    expect(second && operations.finish(second)).toBe(true)
   })
 })

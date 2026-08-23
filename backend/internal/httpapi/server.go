@@ -227,23 +227,21 @@ func clientIP(r *http.Request, trustedProxies []netip.Prefix) string {
 	if len(forwarded) == 0 {
 		return peer.String()
 	}
-	chain := make([]netip.Addr, 0, len(forwarded)+1)
-	for _, header := range forwarded {
-		for _, item := range strings.Split(header, ",") {
+	for headerIndex := len(forwarded) - 1; headerIndex >= 0; headerIndex-- {
+		items := strings.Split(forwarded[headerIndex], ",")
+		for itemIndex := len(items) - 1; itemIndex >= 0; itemIndex-- {
+			item := items[itemIndex]
 			address, err := netip.ParseAddr(strings.TrimSpace(item))
 			if err != nil {
-				return peer.String()
+				continue
 			}
-			chain = append(chain, address.Unmap())
+			address = address.Unmap()
+			if !addressInPrefixes(address, trustedProxies) {
+				return address.String()
+			}
 		}
 	}
-	chain = append(chain, peer)
-	for index := len(chain) - 1; index >= 0; index-- {
-		if !addressInPrefixes(chain[index], trustedProxies) {
-			return chain[index].String()
-		}
-	}
-	return chain[0].String()
+	return peer.String()
 }
 
 func parseRemoteAddress(remote string) (netip.Addr, bool) {

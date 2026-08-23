@@ -10,8 +10,10 @@ import type {
 export interface PublicReplayClient {
   publish(envelope: PublicReplayEnvelopeV1): Promise<PublishReplayResult>
   get(id: string): Promise<PublicReplayRecord>
-  remove(id: string, deleteToken: string): Promise<void>
+  remove(id: string, deleteToken: string, signal?: AbortSignal): Promise<void>
 }
+
+const defaultDeleteTimeoutMs = 15_000
 
 const defaultApiBase = () => {
   const configured = import.meta.env.VITE_FAULTLINE_API_BASE
@@ -69,7 +71,10 @@ const readError = async (response: HttpResponse): Promise<PublicReplayError> => 
 }
 
 export class FetchPublicReplayClient implements PublicReplayClient {
-  constructor(private readonly apiBase = defaultApiBase()) {}
+  constructor(
+    private readonly apiBase = defaultApiBase(),
+    private readonly deleteTimeoutMs = defaultDeleteTimeoutMs,
+  ) {}
 
   async publish(envelope: PublicReplayEnvelopeV1): Promise<PublishReplayResult> {
     const response = await this.request('/api/public-replays', {
@@ -113,12 +118,18 @@ export class FetchPublicReplayClient implements PublicReplayClient {
     }
   }
 
-  async remove(id: string, deleteToken: string): Promise<void> {
-    const response = await this.request(`/api/public-replays/${encodeURIComponent(id)}`, {
-      method: 'DELETE',
-      headers: { 'x-faultline-delete-token': deleteToken },
-    })
-    if (!response.ok) throw await readError(response)
+  async remove(id: string, deleteToken: string, signal?: AbortSignal): Promise<void> {
+    const timedSignal = signalWithTimeout(signal, this.deleteTimeoutMs)
+    try {
+      const response = await this.request(`/api/public-replays/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: { 'x-faultline-delete-token': deleteToken },
+        signal: timedSignal.signal,
+      })
+      if (!response.ok) throw await readError(response)
+    } finally {
+      timedSignal.cleanup()
+    }
   }
 
   private async request(path: string, init?: RequestInit) {
@@ -138,9 +149,28 @@ export class FetchPublicReplayClient implements PublicReplayClient {
   }
 }
 
+function signalWithTimeout(parent: AbortSignal | undefined, timeoutMs: number) {
+  const controller = new AbortController()
+  const abort = () => controller.abort()
+  if (parent?.aborted) controller.abort()
+  else parent?.addEventListener('abort', abort, { once: true })
+  const timeout = setTimeout(abort, Math.max(1, timeoutMs))
+
+  return {
+    signal: controller.signal,
+    cleanup: () => {
+      clearTimeout(timeout)
+      parent?.removeEventListener('abort', abort)
+    },
+  }
+}
+
 function xhrRequest(url: string, init?: RequestInit): Promise<HttpResponse> {
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest()
+    const signal = init?.signal
+    const cleanup = () => signal?.removeEventListener('abort', abort)
+    const abort = () => request.abort()
     request.open(init?.method ?? 'GET', url)
     const headers = init?.headers
     if (headers && typeof headers === 'object' && !Array.isArray(headers)) {
@@ -149,13 +179,27 @@ function xhrRequest(url: string, init?: RequestInit): Promise<HttpResponse> {
       })
     }
     request.onload = () => {
+      cleanup()
       resolve({
         ok: request.status >= 200 && request.status < 300,
         status: request.status,
         json: async () => JSON.parse(request.responseText) as unknown,
       })
     }
-    request.onerror = () => reject(new TypeError('Network request failed'))
+    request.onerror = () => {
+      cleanup()
+      reject(new TypeError('Network request failed'))
+    }
+    request.onabort = () => {
+      cleanup()
+      reject(new DOMException('Request aborted', 'AbortError'))
+    }
+    if (signal?.aborted) {
+      cleanup()
+      reject(new DOMException('Request aborted', 'AbortError'))
+      return
+    }
+    signal?.addEventListener('abort', abort, { once: true })
     request.send(typeof init?.body === 'string' ? init.body : null)
   })
 }

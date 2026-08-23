@@ -267,6 +267,32 @@ func TestClientIPUsesFirstUntrustedAddressBehindTrustedProxyChain(t *testing.T) 
 	}
 }
 
+func TestClientIPSkipsMalformedHopsBehindTrustedProxy(t *testing.T) {
+	trusted := []netip.Prefix{
+		netip.MustParsePrefix("127.0.0.1/32"),
+		netip.MustParsePrefix("10.0.0.0/8"),
+	}
+	tests := []struct {
+		name      string
+		forwarded string
+	}{
+		{name: "garbage prepended by client", forwarded: "bogus, 203.0.113.9"},
+		{name: "empty hop prepended by client", forwarded: ", 203.0.113.9"},
+		{name: "garbage inside trusted chain", forwarded: "203.0.113.9, bogus, 10.1.2.3"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.RemoteAddr = "127.0.0.1:4321"
+			req.Header.Set("X-Forwarded-For", test.forwarded)
+			if got := clientIP(req, trusted); got != "203.0.113.9" {
+				t.Fatalf("malformed hop hid forwarded client identity: %s", got)
+			}
+		})
+	}
+}
+
 func TestRateLimitBucketsAreSeparatedByMethod(t *testing.T) {
 	db, err := sql.Open("sqlite", "file:methodlimit-"+t.Name()+"?mode=memory&cache=shared")
 	if err != nil {

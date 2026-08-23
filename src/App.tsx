@@ -96,6 +96,7 @@ import {
   nextPublishRetry,
   publicReplayErrorCopy,
   resolvePublishAttempt,
+  UnpublishOperationGate,
   unpublishPublicReplay,
   unpublishResultTargetsActiveAttempt,
   type PublicReplayError,
@@ -183,7 +184,7 @@ export function App() {
   const [publishCopied, setPublishCopied] = useState(false)
   const [publishAction, setPublishAction] = useState<'publish' | 'unpublish'>('publish')
   const [publishUnpublishing, setPublishUnpublishing] = useState(false)
-  const unpublishInFlightRef = useRef(false)
+  const unpublishOperationsRef = useRef(new UnpublishOperationGate())
   const [lastSubmittedAttempt, setLastSubmittedAttempt] = useState<ReplayAttemptV1 | null>(null)
   const [savedAttempts, setSavedAttempts] = useState<ReplayAttemptV1[]>(() => {
     try {
@@ -1090,6 +1091,15 @@ export function App() {
     return publicReplayErrorCopy(locale, error)
   }, [locale])
 
+  const cancelUnpublish = useCallback(() => {
+    unpublishOperationsRef.current.cancel()
+    setPublishUnpublishing(false)
+  }, [])
+
+  useEffect(() => () => {
+    unpublishOperationsRef.current.cancel()
+  }, [])
+
   const openPublish = useCallback((attemptId: string) => {
     const attempt = resolvePublishAttempt(attemptId, [
       lastSubmittedAttempt,
@@ -1097,6 +1107,7 @@ export function App() {
       ...savedAttempts,
     ])
     if (!attempt) return
+    cancelUnpublish()
     const existing = capabilityStore.getByAttemptId(attempt.id)
     setPublishAttempt(attempt)
     setPublishStatus(existing ? 'ready' : 'confirm')
@@ -1104,7 +1115,7 @@ export function App() {
     setPublishError(undefined)
     setPublishCopied(false)
     setPublishAction('publish')
-  }, [capabilityStore, lastSubmittedAttempt, replayAttempt, savedAttempts])
+  }, [cancelUnpublish, capabilityStore, lastSubmittedAttempt, replayAttempt, savedAttempts])
 
   const confirmPublish = useCallback(async () => {
     if (!publishAttempt) return
@@ -1181,11 +1192,12 @@ export function App() {
   ])
 
   const unpublishReplay = useCallback(async () => {
-    if (!publishAttempt || unpublishInFlightRef.current) return
+    if (!publishAttempt) return
     const attemptId = publishAttempt.id
     const existing = capabilityStore.getByAttemptId(attemptId)
     if (!existing) return
-    unpublishInFlightRef.current = true
+    const operation = unpublishOperationsRef.current.start(attemptId)
+    if (!operation) return
     setPublishUnpublishing(true)
     setPublishAction('unpublish')
     setPublishError(undefined)
@@ -1194,10 +1206,12 @@ export function App() {
         publicReplayClient,
         capabilityStore,
         existing,
+        operation.controller.signal,
       )
       const targetsActiveAttempt = unpublishResultTargetsActiveAttempt(
         publishAttemptRef.current?.id,
         attemptId,
+        unpublishOperationsRef.current.isCurrent(operation),
       )
       if (!result.ok) {
         if (!targetsActiveAttempt) return
@@ -1224,7 +1238,11 @@ export function App() {
       setPublishError(cleanupWarning)
     } catch (caught) {
       const error = caught as PublicReplayError
-      if (!unpublishResultTargetsActiveAttempt(publishAttemptRef.current?.id, attemptId)) return
+      if (!unpublishResultTargetsActiveAttempt(
+        publishAttemptRef.current?.id,
+        attemptId,
+        unpublishOperationsRef.current.isCurrent(operation),
+      )) return
       const message = publishErrorCopy({
         code: error?.code ?? 'unavailable',
         message: error?.message ?? copy.publishUnavailable,
@@ -1232,8 +1250,9 @@ export function App() {
       setPublishError(message)
       setPublishStatus('error')
     } finally {
-      unpublishInFlightRef.current = false
-      setPublishUnpublishing(false)
+      if (unpublishOperationsRef.current.finish(operation)) {
+        setPublishUnpublishing(false)
+      }
     }
   }, [
     addEvent,
@@ -1614,6 +1633,7 @@ export function App() {
         copied={publishCopied}
         unpublishing={publishUnpublishing}
         onClose={() => {
+          cancelUnpublish()
           setPublishAttempt(null)
           setPublishStatus('confirm')
           setPublishCopied(false)
