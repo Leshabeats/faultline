@@ -3,6 +3,7 @@ import { Check, ChevronDown, Gauge, History, Languages, LogOut, PanelRightClose,
 import type { Locale, ScenarioId } from '../domain/system'
 import { FaultlineMark } from './FaultlineMark'
 import { UI_COPY } from '../i18n'
+import { workspaceCopy } from '../workspace/copy'
 
 interface TopBarProps {
   challengeId: ScenarioId
@@ -26,6 +27,7 @@ interface TopBarProps {
   recording?: boolean
   replayDurationSeconds?: number
   onExitReplay?: () => void
+  onOpenWorkspace?: () => void
 }
 
 const formatTime = (value: number) => {
@@ -56,6 +58,7 @@ export function TopBar({
   recording = false,
   replayDurationSeconds = 0,
   onExitReplay,
+  onOpenWorkspace,
 }: TopBarProps) {
   const [challengeMenuOpen, setChallengeMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -71,8 +74,12 @@ export function TopBar({
   }, [challengeMenuOpen])
 
   return (
-    <header className="topbar">
+    <header className="topbar interview-topbar">
       <FaultlineMark />
+      <nav className="mode-switch" aria-label={locale === 'ru' ? 'Режим Faultline' : 'Faultline mode'}>
+        <button type="button" className="is-active" aria-current="page">{workspaceCopy[locale].interview}</button>
+        <button type="button" onClick={onOpenWorkspace} disabled={replayMode || !onOpenWorkspace}>{workspaceCopy[locale].workspace}</button>
+      </nav>
       <div className="document-menu" ref={menuRef}>
         <button
           className="document-title"

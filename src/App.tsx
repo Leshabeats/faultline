@@ -18,6 +18,7 @@ import { PublishReplayDialog } from './components/PublishReplayDialog'
 import { ReplayPanel } from './components/ReplayPanel'
 import { ReplayTimeline } from './components/ReplayTimeline'
 import { TopBar } from './components/TopBar'
+import { WorkspaceTopBar } from './components/WorkspaceTopBar'
 import {
   challengeOptions,
   clonePackEdges,
@@ -101,6 +102,24 @@ import {
   unpublishResultTargetsActiveAttempt,
   type PublicReplayError,
 } from './publicReplay'
+import {
+  createWorkspaceDocument,
+  flowEdgesFromWorkspace,
+  flowNodesFromWorkspace,
+  workspaceFingerprint,
+} from './workspace/document'
+import { WorkspaceRepository } from './workspace/repository'
+import { workspaceCopy } from './workspace/copy'
+import {
+  downloadWorkspaceFile,
+  downloadWorkspacePng,
+} from './workspace/export'
+import type {
+  AppMode,
+  WorkspaceDocumentV1,
+  WorkspaceExportContext,
+  WorkspaceExportFormat,
+} from './workspace/types'
 
 const formatClock = (elapsedSeconds: number) => {
   const minutes = Math.floor(elapsedSeconds / 60)
@@ -137,9 +156,23 @@ const createReplayRepository = () => {
   }
 }
 
+const createWorkspaceRepository = () => {
+  try {
+    return new WorkspaceRepository(window.localStorage)
+  } catch {
+    const values = new Map<string, string>()
+    return new WorkspaceRepository({
+      getItem: (key) => values.get(key) ?? null,
+      setItem: (key, value) => { values.set(key, value) },
+      removeItem: (key) => { values.delete(key) },
+    })
+  }
+}
+
 export function App() {
   const [locale, setLocale] = useState<Locale>(initialLocale)
   const copy = applicationCopy[locale]
+  const [appMode, setAppMode] = useState<AppMode>('interview')
   const [challengeId, setChallengeId] = useState<ScenarioId>('url-shortener')
   const activePack = getChallengePack(challengeId)
   const [nodes, setNodes] = useState<SystemFlowNode[]>(() => clonePackNodes(getChallengePack('url-shortener')))
@@ -172,6 +205,14 @@ export function App() {
   const [events, setEvents] = useState<TimelineEvent[]>(() => initialEvents(initialLocale()))
   const [judgeReport, setJudgeReport] = useState<JudgeReport | null>(null)
   const [replayRepository] = useState(createReplayRepository)
+  const [workspaceRepository] = useState(createWorkspaceRepository)
+  const [workspaceTitle, setWorkspaceTitle] = useState('System architecture')
+  const [workspaceSaveStatus, setWorkspaceSaveStatus] = useState<'saved' | 'saving' | 'error'>('saved')
+  const [workspaceExportOpen, setWorkspaceExportOpen] = useState(false)
+  const [workspaceExportError, setWorkspaceExportError] = useState<string>()
+  const workspaceMetadataRef = useRef<{ id: string; createdAt?: string }>({
+    id: createStableId('workspace'),
+  })
   const [capabilityStore] = useState(createPublicReplayCapabilityStore)
   const [publicReplayClient] = useState(() => new FetchPublicReplayClient())
   const [capabilitiesVersion, setCapabilitiesVersion] = useState(0)
@@ -202,6 +243,30 @@ export function App() {
   const draftAttemptRef = useRef<ReplayAttemptV1 | null>(null)
   const recordingElapsedMsRef = useRef(0)
   const canonicalStateRef = useRef({ nodes, edges, load, fault, faultTarget, capacity, challengeId })
+  const appModeRef = useRef(appMode)
+  appModeRef.current = appMode
+  const liveStateBeforeWorkspaceRef = useRef<{
+    nodes: SystemFlowNode[]
+    edges: SystemFlowEdge[]
+    load: LoadMultiplier
+    fault: FaultMode
+    faultTarget: FaultTarget | null
+    capacity: CapacityTuning
+    challengeId: ScenarioId
+    playing: boolean
+    selectedNodeId: string | null
+    selectedEdgeId: string | null
+    elapsedSeconds: number
+    activeKind: ComponentKind
+    tick: number
+    telemetry: TelemetryPoint[]
+    events: TimelineEvent[]
+    judgeReport: JudgeReport | null
+    interviewerOpen: boolean
+    rightPanelMode: 'interview' | 'bottleneck'
+    challengeOpen: boolean
+    historyOpen: boolean
+  } | null>(null)
   const liveStateBeforeReplayRef = useRef<{
     nodes: SystemFlowNode[]
     edges: SystemFlowEdge[]
@@ -240,6 +305,16 @@ export function App() {
     .map((edge) => `${edge.id}:${edge.source}>${edge.target}`)
     .sort()
     .join('|')}`
+  const currentWorkspaceFingerprint = useMemo(() => workspaceFingerprint({
+    title: workspaceTitle,
+    simulationProfile: challengeId,
+    nodes,
+    edges,
+    load,
+    fault,
+    faultTarget,
+    capacity,
+  }), [capacity, challengeId, edges, fault, faultTarget, load, nodes, workspaceTitle])
   const { componentCounts, replicaCounts, criticalPathConnected, routedNodeIds } = useMemo(
     () => analyzeTopology(nodes, edges),
     [graphTopology],
@@ -336,6 +411,39 @@ export function App() {
     }),
     [effectiveLoad, fault, simulationTopology],
   )
+
+  const createCurrentWorkspaceDocument = useCallback((now?: string): WorkspaceDocumentV1 => {
+    const current = canonicalStateRef.current
+    return createWorkspaceDocument({
+      id: workspaceMetadataRef.current.id,
+      title: workspaceTitle.trim() || workspaceCopy[locale].defaultTitle,
+      createdAt: workspaceMetadataRef.current.createdAt,
+      simulationProfile: current.challengeId,
+      nodes: current.nodes,
+      edges: current.edges,
+      load: current.load,
+      fault: current.fault,
+      faultTarget: current.faultTarget,
+      capacity: current.capacity,
+      now,
+    })
+  }, [locale, workspaceTitle])
+
+  useEffect(() => {
+    if (appMode !== 'workspace') return
+    setWorkspaceSaveStatus('saving')
+    const timer = window.setTimeout(() => {
+      try {
+        const document = createCurrentWorkspaceDocument()
+        workspaceRepository.save(document)
+        workspaceMetadataRef.current = { id: document.id, createdAt: document.createdAt }
+        setWorkspaceSaveStatus('saved')
+      } catch {
+        setWorkspaceSaveStatus('error')
+      }
+    }, 360)
+    return () => window.clearTimeout(timer)
+  }, [appMode, createCurrentWorkspaceDocument, currentWorkspaceFingerprint, workspaceRepository])
 
   const replayFrame = useMemo(
     () => replayAttempt ? playReplayAt(replayAttempt, replayCursorMs) : null,
@@ -442,6 +550,8 @@ export function App() {
     return next
   }, [])
 
+  const ignoreReplayAction = useCallback((_event: ReplayEventContentV1) => undefined, [])
+
   useEffect(() => {
     setJudgeReport(null)
   }, [capacity, challengeId, graphTopology])
@@ -450,8 +560,10 @@ export function App() {
     if (replayAttempt || !playing) return
     const timer = window.setInterval(() => {
       setTick((value) => value + 1)
-      setElapsedSeconds((value) => value + 1)
-      if (draftAttemptRef.current) recordingElapsedMsRef.current += 1000
+      if (appModeRef.current === 'interview') {
+        setElapsedSeconds((value) => value + 1)
+        if (draftAttemptRef.current) recordingElapsedMsRef.current += 1000
+      }
     }, 900)
     return () => window.clearInterval(timer)
   }, [playing, replayAttempt])
@@ -516,17 +628,20 @@ export function App() {
         nodeHealth: snapshot.nodeHealth,
         nodeDetails: snapshot.nodeDetails,
         load: effectiveLoad,
-        resolveLabel: (node) => localizeNodeLabel(
-          locale,
-          challengeId,
-          node.id,
-          node.data.label,
-        ),
+        resolveLabel: (node) => appMode === 'workspace'
+          ? node.data.label
+          : localizeNodeLabel(
+              locale,
+              challengeId,
+              node.id,
+              node.data.label,
+            ),
         resolveDetail: (detail) => localizeNodeDetail(locale, detail),
       })
     })
   }, [
     criticalPathConnected,
+    appMode,
     challengeId,
     fault,
     locale,
@@ -605,7 +720,7 @@ export function App() {
     setCapacity,
     setActiveKind,
     addEvent,
-    recordAction,
+    recordAction: appMode === 'workspace' ? ignoreReplayAction : recordAction,
   })
 
   const changeLoad = useCallback(
@@ -616,7 +731,7 @@ export function App() {
         : locale === 'ru' ? `Подано ${nextLoad * 10}k запросов/с` : `${nextLoad * 10}k req/s offered`
       const title = locale === 'ru' ? `Целевая нагрузка: ${nextLoad}×` : `Load changed to ${nextLoad}×`
       addEvent(title, offered, nextLoad === 10 ? 'warning' : 'healthy')
-      recordAction({
+      if (appModeRef.current === 'interview') recordAction({
         type: 'load.changed',
         source: 'user',
         payload: { load: nextLoad },
@@ -655,7 +770,7 @@ export function App() {
           : locale === 'ru' ? 'Сбой добавлен в симуляцию' : 'Fault injected into the simulation',
         tone,
       )
-      recordAction({
+      if (appModeRef.current === 'interview') recordAction({
         type: 'fault.changed',
         source: 'user',
         payload: createReplayFaultChangedPayload(nextFault, nextTarget),
@@ -696,7 +811,7 @@ export function App() {
       .find((key) => nextCapacity[key] !== capacity[key])
     const detail = capacityChangeDetail(locale, changedKey)
     addEvent(copy.capacityUpdated, detail, 'neutral')
-    recordAction({
+    if (appModeRef.current === 'interview') recordAction({
       type: 'capacity.changed',
       source: 'user',
       payload: {
@@ -776,6 +891,166 @@ export function App() {
     recordingElapsedMsRef.current = 0
     setDraftAttempt(null)
   }, [locale])
+
+  const openWorkspace = useCallback(() => {
+    if (replayAttempt || appMode === 'workspace') return
+    const current = canonicalStateRef.current
+    liveStateBeforeWorkspaceRef.current = {
+      nodes: current.nodes.map((node) => ({ ...node, position: { ...node.position }, data: { ...node.data } })),
+      edges: current.edges.map((edge) => ({ ...edge, data: edge.data ? { ...edge.data } : undefined })),
+      load: current.load,
+      fault: current.fault,
+      faultTarget: current.faultTarget ? { ...current.faultTarget } : null,
+      capacity: { ...current.capacity },
+      challengeId: current.challengeId,
+      playing,
+      selectedNodeId,
+      selectedEdgeId,
+      elapsedSeconds,
+      activeKind,
+      tick,
+      telemetry,
+      events,
+      judgeReport,
+      interviewerOpen,
+      rightPanelMode,
+      challengeOpen,
+      historyOpen,
+    }
+
+    const stored = workspaceRepository.read()
+    const nextTitle = stored?.title ?? workspaceCopy[locale].defaultTitle
+    const document = stored ?? createWorkspaceDocument({
+      id: workspaceMetadataRef.current.id,
+      title: nextTitle,
+      simulationProfile: current.challengeId,
+      nodes: current.nodes,
+      edges: current.edges,
+      load: current.load,
+      fault: current.fault,
+      faultTarget: current.faultTarget,
+      capacity: current.capacity,
+    })
+
+    workspaceMetadataRef.current = { id: document.id, createdAt: document.createdAt }
+    setWorkspaceTitle(document.title)
+    setChallengeId(document.simulationProfile)
+    setNodes(flowNodesFromWorkspace(document.architecture.nodes, document.load))
+    setEdges(flowEdgesFromWorkspace(document.architecture.edges, document.load))
+    setLoad(document.load)
+    setFault(document.fault)
+    setFaultTarget(document.faultTarget ?? null)
+    setCapacity({ ...document.capacity })
+    setSelectedNodeId(document.architecture.nodes.find((node) => node.data.kind === 'service')?.id ?? document.architecture.nodes[0]?.id ?? null)
+    setSelectedEdgeId(null)
+    setInterviewerOpen(false)
+    setChallengeOpen(false)
+    setHistoryOpen(false)
+    setWorkspaceExportOpen(false)
+    setWorkspaceExportError(undefined)
+    setWorkspaceSaveStatus('saved')
+    setTick(0)
+    setPlaying(true)
+    setAppMode('workspace')
+  }, [
+    activeKind,
+    appMode,
+    challengeOpen,
+    elapsedSeconds,
+    events,
+    historyOpen,
+    interviewerOpen,
+    judgeReport,
+    locale,
+    playing,
+    replayAttempt,
+    rightPanelMode,
+    selectedEdgeId,
+    selectedNodeId,
+    telemetry,
+    tick,
+    workspaceRepository,
+  ])
+
+  const openInterviewMode = useCallback(() => {
+    if (appMode !== 'workspace') return
+    try {
+      const document = createCurrentWorkspaceDocument()
+      workspaceRepository.save(document)
+      workspaceMetadataRef.current = { id: document.id, createdAt: document.createdAt }
+    } catch {
+      setWorkspaceSaveStatus('error')
+    }
+
+    const previous = liveStateBeforeWorkspaceRef.current
+    setWorkspaceExportOpen(false)
+    setWorkspaceExportError(undefined)
+    setAppMode('interview')
+    if (!previous) return
+    setNodes(previous.nodes)
+    setEdges(previous.edges)
+    setLoad(previous.load)
+    setFault(previous.fault)
+    setFaultTarget(previous.faultTarget)
+    setCapacity(previous.capacity)
+    setChallengeId(previous.challengeId)
+    setPlaying(previous.playing)
+    setSelectedNodeId(previous.selectedNodeId)
+    setSelectedEdgeId(previous.selectedEdgeId)
+    setElapsedSeconds(previous.elapsedSeconds)
+    setActiveKind(previous.activeKind)
+    setTick(previous.tick)
+    setTelemetry(previous.telemetry)
+    setEvents(previous.events)
+    setJudgeReport(previous.judgeReport)
+    setInterviewerOpen(previous.interviewerOpen)
+    setRightPanelMode(previous.rightPanelMode)
+    setChallengeOpen(previous.challengeOpen)
+    setHistoryOpen(previous.historyOpen)
+    liveStateBeforeWorkspaceRef.current = null
+  }, [appMode, createCurrentWorkspaceDocument, workspaceRepository])
+
+  const updateWorkspaceNodeData = useCallback((nodeId: string, patch: { label?: string; notes?: string }) => {
+    if (appModeRef.current !== 'workspace') return
+    setNodes((current) => current.map((node) => node.id === nodeId
+      ? {
+          ...node,
+          data: {
+            ...node.data,
+            ...(patch.label === undefined ? {} : { label: patch.label.slice(0, 120) }),
+            ...(patch.notes === undefined ? {} : { notes: patch.notes.slice(0, 2_000) }),
+          },
+        }
+      : node))
+  }, [])
+
+  const exportWorkspace = useCallback(async (format: WorkspaceExportFormat) => {
+    try {
+      const document = createCurrentWorkspaceDocument()
+      const report = challengeId === 'news-feed' ? newsFeedReport : capacityReport
+      const context: WorkspaceExportContext = {
+        locale,
+        modelLabel: scenarioLabels[locale][challengeId].title,
+        metrics: {
+          throughput: formatMetric(snapshot.metrics.throughput, 'throughput'),
+          p99: formatMetric(snapshot.metrics.p99, 'p99'),
+          errors: `${snapshot.metrics.errorRate.toFixed(1)}%`,
+        },
+        monthlyCost: report.cost.total,
+        assumptions: report.assumptions,
+      }
+      workspaceRepository.save(document)
+      workspaceMetadataRef.current = { id: document.id, createdAt: document.createdAt }
+      if (format === 'png') await downloadWorkspacePng(document, context)
+      else downloadWorkspaceFile(document, context, format)
+      setWorkspaceSaveStatus('saved')
+      setWorkspaceExportError(undefined)
+      setWorkspaceExportOpen(false)
+    } catch {
+      setWorkspaceExportError(workspaceCopy[locale].exportFailed)
+      setWorkspaceExportOpen(true)
+    }
+  }, [capacityReport, challengeId, createCurrentWorkspaceDocument, locale, newsFeedReport, snapshot.metrics, workspaceRepository])
 
   const commitPrediction = useCallback(() => {
     if (!bottleneckPrediction || predictionRationale.trim().length < 8) return
@@ -1378,9 +1653,25 @@ export function App() {
         (replayAttempt ? replayPlaying : playing) ? 'simulation-running' : 'simulation-paused'
       } ${replayAttempt ? 'replay-mode' : ''} ${rightPanelMode === 'bottleneck' ? 'bottleneck-mode' : ''} ${
         selectedNode || selectedEdge ? 'node-inspector-open' : ''
-      }`}
+      } ${appMode === 'workspace' ? 'workspace-mode' : 'interview-mode'}`}
     >
-      <TopBar
+      {appMode === 'workspace' ? (
+        <WorkspaceTopBar
+          locale={locale}
+          title={workspaceTitle}
+          saveStatus={workspaceSaveStatus}
+          exportOpen={workspaceExportOpen}
+          exportError={workspaceExportError}
+          onTitleChange={setWorkspaceTitle}
+          onLocaleChange={setLocale}
+          onOpenInterview={openInterviewMode}
+          onExportToggle={() => {
+            setWorkspaceExportError(undefined)
+            setWorkspaceExportOpen((value) => !value)
+          }}
+          onExport={(format) => void exportWorkspace(format)}
+        />
+      ) : <TopBar
         challengeId={challengeId}
         locale={locale}
         onLocaleChange={setLocale}
@@ -1415,7 +1706,8 @@ export function App() {
         recording={Boolean(draftAttempt)}
         replayDurationSeconds={Math.floor((replayAttempt?.durationMs ?? 0) / 1000)}
         onExitReplay={exitReplay}
-      />
+        onOpenWorkspace={openWorkspace}
+      />}
       <div className="workspace">
         <ArchitectureCanvas
           nodes={nodes}
@@ -1433,13 +1725,22 @@ export function App() {
           telemetry={telemetry}
           faults={activePack.faults}
           telemetryLabels={locale === 'ru'
-            ? challengeId === 'news-feed'
+            ? appMode === 'workspace'
+              ? { throughput: 'Пропускная способность', p99: 'p99', errorRate: 'Ошибки', dbCpu: workspaceCopy.ru.infrastructure }
+              : challengeId === 'news-feed'
               ? { throughput: 'Доставки', p99: 'Свежесть', errorRate: 'Устаревшие', dbCpu: 'Воркеры' }
               : { throughput: 'Пропускная способность', p99: 'p99', errorRate: 'Ошибки', dbCpu: 'CPU БД' }
-            : activePack.telemetryLabels}
+            : appMode === 'workspace'
+              ? { ...activePack.telemetryLabels, dbCpu: workspaceCopy.en.infrastructure }
+              : activePack.telemetryLabels}
+          telemetryValues={appMode === 'workspace'
+            ? { dbCpu: `$${Math.round((challengeId === 'news-feed' ? newsFeedReport : capacityReport).cost.total).toLocaleString('en-US')}` }
+            : undefined}
           canvasLabel={locale === 'ru'
-            ? challengeId === 'news-feed' ? 'Архитектура ленты новостей' : 'Архитектура коротких ссылок'
-            : activePack.canvasLabel}
+            ? appMode === 'workspace'
+              ? workspaceTitle
+              : challengeId === 'news-feed' ? 'Архитектура ленты новостей' : 'Архитектура коротких ссылок'
+            : appMode === 'workspace' ? workspaceTitle : activePack.canvasLabel}
           onNodesChange={onNodesChange}
           onNodeDragStop={onNodeDragStop}
           onEdgesChange={onEdgesChange}
@@ -1459,10 +1760,12 @@ export function App() {
             setSelectedEdgeId(null)
           }}
           onTopologyChange={changeNodeTopology}
+          workspaceMode={appMode === 'workspace'}
+          onNodeDataChange={updateWorkspaceNodeData}
           onLoadChange={changeLoad}
           onFaultChange={changeFault}
           readOnly={Boolean(replayAttempt)}
-          fitViewKey={replayAttempt?.id ?? `${challengeId}-live`}
+          fitViewKey={replayAttempt?.id ?? `${appMode}-${challengeId}-live`}
           bottomOverlay={replayAttempt ? (
             <ReplayTimeline
               locale={locale}
@@ -1500,7 +1803,7 @@ export function App() {
             />
           ) : undefined}
         />
-        {!historyOpen && !replayAttempt && rightPanelMode === 'interview' && <InterviewerPanel
+        {appMode === 'interview' && !historyOpen && !replayAttempt && rightPanelMode === 'interview' && <InterviewerPanel
           open={interviewerOpen}
           locale={locale}
           providerLabel={locale === 'ru' ? 'Локальный режим' : 'Local preview'}
@@ -1517,7 +1820,7 @@ export function App() {
           onOpenCapacity={() => setRightPanelMode('bottleneck')}
           onClose={() => setInterviewerOpen((value) => !value)}
         />}
-        {!historyOpen && !replayAttempt && rightPanelMode === 'bottleneck' && activePack.panel === 'capacity' && (
+        {appMode === 'interview' && !historyOpen && !replayAttempt && rightPanelMode === 'bottleneck' && activePack.panel === 'capacity' && (
           <BottleneckPanel
             open={interviewerOpen}
             locale={locale}
@@ -1545,7 +1848,7 @@ export function App() {
             onClose={() => setInterviewerOpen((value) => !value)}
           />
         )}
-        {!historyOpen && !replayAttempt && rightPanelMode === 'bottleneck' && activePack.panel === 'fanout' && (
+        {appMode === 'interview' && !historyOpen && !replayAttempt && rightPanelMode === 'bottleneck' && activePack.panel === 'fanout' && (
           <FanoutPanel
             open={interviewerOpen}
             locale={locale}
@@ -1608,7 +1911,7 @@ export function App() {
       <ChallengePanel
         challenge={activePack.definition}
         locale={locale}
-        open={challengeOpen && !replayAttempt}
+        open={appMode === 'interview' && challengeOpen && !replayAttempt}
         onClose={() => setChallengeOpen(false)}
         onRunCase={(nextLoad, nextFault) => {
           changeLoad(nextLoad)
@@ -1648,7 +1951,9 @@ export function App() {
         onUnpublish={publishUrl ? () => void unpublishReplay() : undefined}
       />
       <div className="screen-reader-status" aria-live="polite">
-        {replayAttempt
+        {appMode === 'workspace'
+          ? `${workspaceCopy[locale].workspace} ${workspaceTitle}. ${workspaceCopy[locale].statusAnnouncement[workspaceSaveStatus]}`
+          : replayAttempt
           ? locale === 'ru'
             ? `Повтор ${replayPlaying ? 'воспроизводится' : 'приостановлен'} на ${formatClock(Math.floor(replayCursorMs / 1000))}.`
             : `Replay ${replayPlaying ? 'playing' : 'paused'} at ${formatClock(Math.floor(replayCursorMs / 1000))}.`

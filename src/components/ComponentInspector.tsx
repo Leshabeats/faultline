@@ -8,8 +8,9 @@ import {
   type NodeTopology,
 } from '../domain/topology'
 import { UI_COPY, componentLabels } from '../i18n'
+import { workspaceCopy } from '../workspace/copy'
 
-type InspectorTab = 'overview' | 'contract' | 'scaling'
+type InspectorTab = 'overview' | 'contract' | 'scaling' | 'notes'
 
 interface InspectorCopy {
   role: string
@@ -68,6 +69,8 @@ interface ComponentInspectorProps {
   onClose: () => void
   onFaultChange: (fault: FaultMode, target?: FaultTarget) => void
   onTopologyChange: (nodeId: string, topology: NodeTopology) => void
+  workspaceMode?: boolean
+  onNodeDataChange?: (nodeId: string, patch: { label?: string; notes?: string }) => void
 }
 
 export function ComponentInspector({
@@ -79,12 +82,15 @@ export function ComponentInspector({
   onClose,
   onFaultChange,
   onTopologyChange,
+  workspaceMode = false,
+  onNodeDataChange,
 }: ComponentInspectorProps) {
   const [tab, setTab] = useState<InspectorTab>('overview')
   useEffect(() => setTab('overview'), [node?.id])
   if (!node) return null
 
   const text = UI_COPY[locale]
+  const workspaceText = workspaceCopy[locale]
   const copy = copies[scenario][locale][node.data.kind] ?? genericCopy(locale, node)
   const { replicas, shards } = normalizeNodeTopology(node.data.kind, node.data)
   const maxReplicas = MAX_REPLICAS_BY_KIND[node.data.kind]
@@ -106,7 +112,20 @@ export function ComponentInspector({
       <header>
         <div>
           <span>{componentLabels[locale][node.data.kind]}</span>
-          <strong>{node.data.label}</strong>
+          {workspaceMode && onNodeDataChange ? (
+            <input
+              className="workspace-node-title"
+              value={node.data.label}
+              maxLength={120}
+              aria-label={workspaceText.componentName}
+              onChange={(event) => onNodeDataChange(node.id, { label: event.target.value })}
+              onBlur={() => {
+                if (!node.data.label.trim()) {
+                  onNodeDataChange(node.id, { label: componentLabels[locale][node.data.kind] })
+                }
+              }}
+            />
+          ) : <strong>{node.data.label}</strong>}
         </div>
         <button type="button" onClick={onClose} aria-label={text.close}><X size={18} /></button>
       </header>
@@ -142,9 +161,13 @@ export function ComponentInspector({
       )}
 
       <nav className="inspector-tabs" aria-label={locale === 'ru' ? 'Сведения о компоненте' : 'Component details'}>
-        {(['overview', 'contract', 'scaling'] as const).map((value) => (
+        {(workspaceMode ? ['overview', 'scaling', 'notes'] as const : ['overview', 'contract', 'scaling'] as const).map((value) => (
           <button key={value} type="button" className={tab === value ? 'is-active' : ''} onClick={() => setTab(value)}>
-            {text[value]}
+            {value === 'notes'
+              ? workspaceText.notes
+              : value === 'scaling' && workspaceMode
+                ? workspaceText.capacity
+                : text[value]}
           </button>
         ))}
       </nav>
@@ -198,6 +221,19 @@ export function ComponentInspector({
             )}
             {!canReplicate && !canShard && <p>{copy.decision}</p>}
             <p className="topology-hint">{text.topologyHint}</p>
+          </section>
+        )}
+        {tab === 'notes' && workspaceMode && onNodeDataChange && (
+          <section className="workspace-node-notes">
+            <span className="inspector-kicker">{workspaceText.componentContext}</span>
+            <textarea
+              value={node.data.notes ?? ''}
+              maxLength={2_000}
+              aria-label={workspaceText.componentContext}
+              placeholder={workspaceText.notesPlaceholder}
+              onChange={(event) => onNodeDataChange(node.id, { notes: event.target.value })}
+            />
+            <small>{workspaceText.notesHelp}</small>
           </section>
         )}
       </div>

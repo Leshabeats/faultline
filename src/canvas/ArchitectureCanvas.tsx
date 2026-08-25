@@ -57,7 +57,10 @@ interface ArchitectureCanvasProps {
   fitViewKey?: string
   faults: readonly FaultMode[]
   telemetryLabels?: Partial<Record<'throughput' | 'p99' | 'errorRate' | 'dbCpu', string>>
+  telemetryValues?: Partial<Record<'throughput' | 'p99' | 'errorRate' | 'dbCpu', string>>
   canvasLabel?: string
+  workspaceMode?: boolean
+  onNodeDataChange?: (nodeId: string, patch: { label?: string; notes?: string }) => void
 }
 
 export function ArchitectureCanvas({
@@ -90,7 +93,10 @@ export function ArchitectureCanvas({
   fitViewKey,
   faults,
   telemetryLabels,
+  telemetryValues,
   canvasLabel = 'System architecture',
+  workspaceMode = false,
+  onNodeDataChange,
 }: ArchitectureCanvasProps) {
   const flowRef = useRef<ReactFlowInstance<SystemFlowNode, SystemFlowEdge> | null>(null)
 
@@ -151,7 +157,7 @@ export function ArchitectureCanvas({
           />
         </ReactFlow>
         {!readOnly && <ComponentDock activeKind={activeKind} onAdd={onAddNode} locale={locale} />}
-        {!readOnly && <TelemetryRibbon history={telemetry} labels={telemetryLabels} locale={locale} />}
+        {!readOnly && <TelemetryRibbon history={telemetry} labels={telemetryLabels} values={telemetryValues} locale={locale} />}
         {!readOnly && <SimulationControls
           load={load}
           effectiveLoad={effectiveLoad}
@@ -185,11 +191,13 @@ export function ArchitectureCanvas({
             node={selectedNode}
             scenario={scenario}
             locale={locale}
+            workspaceMode={workspaceMode}
             fault={fault}
             faultTarget={faultTarget}
             onClose={onInspectorClose}
             onFaultChange={onFaultChange}
             onTopologyChange={onTopologyChange}
+            onNodeDataChange={onNodeDataChange}
           />)}
     </main>
   )
