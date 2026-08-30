@@ -48,6 +48,9 @@ const isOptionalBoundedString = (value: unknown, max: number) =>
 const isOptionalHandle = (value: unknown) =>
   value === undefined || value === null || isBoundedString(value, 80)
 
+const isOptionalFiniteNumber = (value: unknown, limit = 10_000) =>
+  value === undefined || isFiniteNumber(value, limit)
+
 const isIsoDate = (value: unknown) =>
   isBoundedString(value, 40) && Number.isFinite(Date.parse(value))
 
@@ -86,7 +89,9 @@ const isWorkspaceEdge = (value: unknown): value is WorkspaceEdgeV1 =>
   isBoundedString(value.target) &&
   isOptionalHandle(value.sourceHandle) &&
   isOptionalHandle(value.targetHandle) &&
-  isOptionalBoundedString(value.label, 160)
+  isOptionalBoundedString(value.label, 160) &&
+  isOptionalFiniteNumber(value.labelOffsetX) &&
+  isOptionalFiniteNumber(value.labelOffsetY)
 
 const isFaultTarget = (value: unknown): value is FaultTarget =>
   isRecord(value) &&

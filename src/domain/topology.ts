@@ -8,6 +8,10 @@ export interface NodeTopology {
   shards: number
 }
 
+export interface DatabaseTopologyUpdate extends NodeTopology {
+  nodeId: string
+}
+
 /**
  * UI-independent graph contract consumed by simulation, judging, and replay.
  * React Flow nodes and replay nodes both satisfy this structural type.
@@ -72,6 +76,25 @@ export const databaseReadReplicas = (
 ): ReadReplicaCount => Math.min(2, Math.max(0, topology.replicas - 1)) as ReadReplicaCount
 
 export const databaseReplicas = (readReplicas: ReadReplicaCount) => readReplicas + 1
+
+export function databaseTopologyUpdates<Node extends TopologyNode>(
+  nodes: readonly Node[],
+  selectedNodeId: string,
+  input: NodeTopology,
+  scope: 'all' | 'selected',
+): DatabaseTopologyUpdate[] {
+  const selected = normalizeNodeTopology('database', input)
+  return nodes
+    .filter((node) => node.data.kind === 'database')
+    .filter((node) => scope === 'all' || node.id === selectedNodeId)
+    .map((node) => ({
+      nodeId: node.id,
+      replicas: selected.replicas,
+      shards: node.id === selectedNodeId
+        ? selected.shards
+        : normalizeNodeTopology('database', node.data).shards,
+    }))
+}
 
 export function databaseReplicationMatches<Node extends TopologyNode>(
   nodes: readonly Node[],

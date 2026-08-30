@@ -18,6 +18,7 @@ import type {
 } from '../domain/system'
 import {
   databaseReadReplicas,
+  databaseTopologyUpdates,
   normalizeNodeTopology,
   type NodeTopology,
 } from '../domain/topology'
@@ -43,6 +44,7 @@ interface UseArchitectureEditorInput {
   setActiveKind: Dispatch<SetStateAction<ComponentKind>>
   addEvent: (title: string, detail: string, tone?: TimelineEvent['tone']) => void
   recordAction: (event: ReplayEventContentV1) => unknown
+  databaseTopologyScope: 'all' | 'selected'
 }
 
 /** Owns editable-canvas commands and their replay representation. */
@@ -59,6 +61,7 @@ export function useArchitectureEditor({
   setActiveKind,
   addEvent,
   recordAction,
+  databaseTopologyScope,
 }: UseArchitectureEditorInput) {
   const copy = applicationCopy[locale]
 
@@ -178,15 +181,12 @@ export function useArchitectureEditor({
     if (node.data.kind === 'database') {
       const readReplicas = databaseReadReplicas({ replicas })
       const nextCapacity = { ...capacity, readReplicas }
-      const topology = nodes
-        .filter((item) => item.data.kind === 'database')
-        .map((item) => ({
-          nodeId: item.id,
-          replicas,
-          shards: item.id === nodeId
-            ? shards
-            : normalizeNodeTopology('database', item.data).shards,
-        }))
+      const topology = databaseTopologyUpdates(
+        nodes,
+        nodeId,
+        { replicas, shards },
+        databaseTopologyScope,
+      )
       setNodes((current) => current.map((item) => {
         const patch = topology.find((candidate) => candidate.nodeId === item.id)
         return patch
@@ -236,7 +236,7 @@ export function useArchitectureEditor({
         },
       })
     }
-  }, [addEvent, capacity, locale, nodes, recordAction, setCapacity, setNodes])
+  }, [addEvent, capacity, databaseTopologyScope, locale, nodes, recordAction, setCapacity, setNodes])
 
   return {
     onNodesChange,

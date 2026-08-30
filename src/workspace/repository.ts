@@ -34,3 +34,15 @@ export class WorkspaceRepository {
     this.storage.setItem(this.key, serialized)
   }
 }
+
+export function saveWorkspaceBestEffort(
+  repository: Pick<WorkspaceRepository, 'save'>,
+  document: WorkspaceDocumentV1,
+): boolean {
+  try {
+    repository.save(document)
+    return true
+  } catch {
+    return false
+  }
+}

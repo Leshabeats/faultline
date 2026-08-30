@@ -114,7 +114,6 @@ export function ArchitectureCanvas({
     <main className={`canvas-region ${selectedNode || selectedEdge ? 'inspector-visible' : ''}`} aria-label={locale === 'ru' ? 'Схема архитектуры системы' : 'System architecture canvas'}>
       <div className="flow-surface">
         <ReactFlow<SystemFlowNode, SystemFlowEdge>
-          key={fitViewKey}
           nodes={nodes}
           edges={edges}
           nodeTypes={nodeTypes}

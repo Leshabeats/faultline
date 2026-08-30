@@ -34,6 +34,8 @@ export interface WorkspaceEdgeV1 {
   sourceHandle?: string | null
   targetHandle?: string | null
   label?: string
+  labelOffsetX?: number
+  labelOffsetY?: number
 }
 
 export interface WorkspaceDocumentV1 {

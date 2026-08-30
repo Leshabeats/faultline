@@ -31,6 +31,8 @@ const workspaceEdge = (edge: SystemFlowEdge): WorkspaceEdgeV1 => {
   const canonicalLabel = typeof edge.data?.baseLabel === 'string'
     ? edge.data.baseLabel
     : edge.label
+  const labelOffsetX = edge.data?.labelOffsetX
+  const labelOffsetY = edge.data?.labelOffsetY
   return {
     id: edge.id,
     type: 'traffic',
@@ -39,6 +41,8 @@ const workspaceEdge = (edge: SystemFlowEdge): WorkspaceEdgeV1 => {
     ...(edge.sourceHandle === undefined ? {} : { sourceHandle: edge.sourceHandle }),
     ...(edge.targetHandle === undefined ? {} : { targetHandle: edge.targetHandle }),
     ...(typeof canonicalLabel === 'string' ? { label: canonicalLabel } : {}),
+    ...(typeof labelOffsetX === 'number' && Number.isFinite(labelOffsetX) ? { labelOffsetX } : {}),
+    ...(typeof labelOffsetY === 'number' && Number.isFinite(labelOffsetY) ? { labelOffsetY } : {}),
   }
 }
 
@@ -69,6 +73,8 @@ export const flowEdgesFromWorkspace = (
     tone: 'healthy',
     intensity: load,
     paused: false,
+    ...(edge.labelOffsetX === undefined ? {} : { labelOffsetX: edge.labelOffsetX }),
+    ...(edge.labelOffsetY === undefined ? {} : { labelOffsetY: edge.labelOffsetY }),
   },
 }))
 

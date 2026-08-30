@@ -109,7 +109,7 @@ import {
   flowNodesFromWorkspace,
   workspaceFingerprint,
 } from './workspace/document'
-import { WorkspaceRepository } from './workspace/repository'
+import { WorkspaceRepository, saveWorkspaceBestEffort } from './workspace/repository'
 import { workspaceCopy } from './workspace/copy'
 import { createWorkspaceTelemetry } from './workspace/telemetry'
 import {
@@ -735,6 +735,7 @@ export function App() {
     setActiveKind,
     addEvent,
     recordAction: appMode === 'workspace' ? ignoreReplayAction : recordAction,
+    databaseTopologyScope: appMode === 'workspace' ? 'selected' : 'all',
   })
 
   const changeLoad = useCallback(
@@ -1054,11 +1055,15 @@ export function App() {
         monthlyCost: report.cost.total,
         assumptions: report.assumptions,
       }
-      workspaceRepository.save(document)
-      workspaceMetadataRef.current = { id: document.id, createdAt: document.createdAt }
+      const saved = saveWorkspaceBestEffort(workspaceRepository, document)
+      if (saved) {
+        workspaceMetadataRef.current = { id: document.id, createdAt: document.createdAt }
+        setWorkspaceSaveStatus('saved')
+      } else {
+        setWorkspaceSaveStatus('error')
+      }
       if (format === 'png') await downloadWorkspacePng(document, context)
       else downloadWorkspaceFile(document, context, format)
-      setWorkspaceSaveStatus('saved')
       setWorkspaceExportError(undefined)
       setWorkspaceExportOpen(false)
     } catch {

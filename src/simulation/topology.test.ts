@@ -4,6 +4,7 @@ import type { SystemFlowNode } from '../canvas/types'
 import {
   alignDatabaseReplication,
   databaseReplicationMatches,
+  databaseTopologyUpdates,
 } from '../domain/topology'
 import { analyzeTopology } from './topology'
 
@@ -92,5 +93,35 @@ describe('topology analysis', () => {
     expect(databaseReplicationMatches(aligned, 2)).toBe(true)
     expect(aligned.find((node) => node.data.kind === 'database')?.data.replicas).toBe(3)
     expect(databaseReplicationMatches(databases, 2)).toBe(false)
+  })
+
+  it('can scope a freeform database topology edit to one selected node', () => {
+    const primary = seedNodes.find((node) => node.data.kind === 'database')!
+    const analytics = {
+      ...primary,
+      id: 'analytics-database',
+      data: { ...primary.data, replicas: 1, shards: 2 },
+    }
+
+    expect(databaseTopologyUpdates(
+      [...seedNodes, analytics],
+      analytics.id,
+      { replicas: 2, shards: 4 },
+      'selected',
+    )).toEqual([{
+      nodeId: analytics.id,
+      replicas: 2,
+      shards: 4,
+    }])
+
+    expect(databaseTopologyUpdates(
+      [...seedNodes, analytics],
+      analytics.id,
+      { replicas: 2, shards: 4 },
+      'all',
+    )).toEqual([
+      { nodeId: primary.id, replicas: 2, shards: 1 },
+      { nodeId: analytics.id, replicas: 2, shards: 4 },
+    ])
   })
 })

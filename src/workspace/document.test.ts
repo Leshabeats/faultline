@@ -40,6 +40,10 @@ describe('workspace document', () => {
     })
     expect(document.architecture.nodes[0]?.data).not.toHaveProperty('health')
     expect(document.architecture.edges[0]).not.toHaveProperty('data')
+    expect(document.architecture.edges.find((edge) => edge.id === 'api-database')).toMatchObject({
+      labelOffsetX: 60,
+      labelOffsetY: 128,
+    })
   })
 
   it('restores React Flow nodes and edges with live presentation defaults', () => {
@@ -50,6 +54,10 @@ describe('workspace document', () => {
     expect(nodes.find((node) => node.id === 'api')?.data.notes).toBe('Idempotent writes.')
     expect(nodes[0]?.data.health).toBe('healthy')
     expect(edges[0]?.data).toMatchObject({ tone: 'healthy', intensity: 3, paused: false })
+    expect(edges.find((edge) => edge.id === 'api-database')?.data).toMatchObject({
+      labelOffsetX: 60,
+      labelOffsetY: 128,
+    })
   })
 
   it('ignores live health changes in the persistence fingerprint', () => {

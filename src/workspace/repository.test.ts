@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { DEFAULT_CAPACITY_TUNING } from '../capacity/model'
 import { seedEdges, seedNodes } from '../canvas/seed'
 import { createWorkspaceDocument } from './document'
-import { WorkspaceRepository } from './repository'
+import { WorkspaceRepository, saveWorkspaceBestEffort } from './repository'
 
 const memoryStorage = () => {
   const values = new Map<string, string>()
@@ -51,6 +51,28 @@ describe('WorkspaceRepository', () => {
     })
 
     expect(repository.read()).toBeNull()
+  })
+
+  it('reports blocked writes without throwing from best-effort persistence', () => {
+    const repository = new WorkspaceRepository({
+      getItem: () => null,
+      setItem: () => { throw new Error('Storage quota exceeded') },
+      removeItem: () => undefined,
+    })
+    const document = createWorkspaceDocument({
+      id: 'workspace-export',
+      title: 'Exportable workspace',
+      simulationProfile: 'url-shortener',
+      nodes: seedNodes,
+      edges: seedEdges,
+      load: 1,
+      fault: 'none',
+      faultTarget: null,
+      capacity: DEFAULT_CAPACITY_TUNING,
+      now: '2026-08-25T12:00:00.000Z',
+    })
+
+    expect(saveWorkspaceBestEffort(repository, document)).toBe(false)
   })
 
   it('rejects a workspace with invalid capacity or dangling fault targets', () => {
