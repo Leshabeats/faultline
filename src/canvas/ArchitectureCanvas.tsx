@@ -58,6 +58,7 @@ interface ArchitectureCanvasProps {
   faults: readonly FaultMode[]
   telemetryLabels?: Partial<Record<'throughput' | 'p99' | 'errorRate' | 'dbCpu', string>>
   telemetryValues?: Partial<Record<'throughput' | 'p99' | 'errorRate' | 'dbCpu', string>>
+  hiddenTelemetrySparklines?: readonly ('throughput' | 'p99' | 'errorRate' | 'dbCpu')[]
   canvasLabel?: string
   workspaceMode?: boolean
   onNodeDataChange?: (nodeId: string, patch: { label?: string; notes?: string }) => void
@@ -94,6 +95,7 @@ export function ArchitectureCanvas({
   faults,
   telemetryLabels,
   telemetryValues,
+  hiddenTelemetrySparklines,
   canvasLabel = 'System architecture',
   workspaceMode = false,
   onNodeDataChange,
@@ -157,7 +159,13 @@ export function ArchitectureCanvas({
           />
         </ReactFlow>
         {!readOnly && <ComponentDock activeKind={activeKind} onAdd={onAddNode} locale={locale} />}
-        {!readOnly && <TelemetryRibbon history={telemetry} labels={telemetryLabels} values={telemetryValues} locale={locale} />}
+        {!readOnly && <TelemetryRibbon
+          history={telemetry}
+          labels={telemetryLabels}
+          values={telemetryValues}
+          hiddenSparklines={hiddenTelemetrySparklines}
+          locale={locale}
+        />}
         {!readOnly && <SimulationControls
           load={load}
           effectiveLoad={effectiveLoad}

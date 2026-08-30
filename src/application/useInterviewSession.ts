@@ -13,6 +13,7 @@ interface UseInterviewSessionInput {
   locale: Locale
   context: InterviewContext
   questionRevision: string
+  active: boolean
   replayActive: boolean
   capacity: CapacityTuning
   capacityMonthlyCost: number
@@ -37,6 +38,7 @@ export function useInterviewSession({
   locale,
   context,
   questionRevision,
+  active,
   replayActive,
   capacity,
   capacityMonthlyCost,
@@ -50,6 +52,7 @@ export function useInterviewSession({
   const [prompt, setPrompt] = useState(() => initialPrompt(locale))
   const [busy, setBusy] = useState(false)
   const contextRef = useRef(context)
+  const questionRevisionRef = useRef<string | null>(null)
   const busyTimerRef = useRef<number | null>(null)
   contextRef.current = context
 
@@ -58,7 +61,8 @@ export function useInterviewSession({
   }, [])
 
   useEffect(() => {
-    if (replayActive) return
+    if (!active || replayActive || questionRevisionRef.current === questionRevision) return
+    questionRevisionRef.current = questionRevision
     let cancelled = false
     setFeedback('')
     interviewer
@@ -69,7 +73,7 @@ export function useInterviewSession({
     return () => {
       cancelled = true
     }
-  }, [interviewer, questionRevision, replayActive])
+  }, [active, interviewer, questionRevision, replayActive])
 
   const runAction = useCallback(async (action: InterviewAction) => {
     setBusy(true)

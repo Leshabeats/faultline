@@ -86,8 +86,12 @@ export function ComponentInspector({
   onNodeDataChange,
 }: ComponentInspectorProps) {
   const [tab, setTab] = useState<InspectorTab>('overview')
-  useEffect(() => setTab('overview'), [node?.id])
+  useEffect(() => setTab('overview'), [node?.id, workspaceMode])
   if (!node) return null
+
+  const visibleTab = workspaceMode
+    ? tab === 'contract' ? 'overview' : tab
+    : tab === 'notes' ? 'overview' : tab
 
   const text = UI_COPY[locale]
   const workspaceText = workspaceCopy[locale]
@@ -162,7 +166,7 @@ export function ComponentInspector({
 
       <nav className="inspector-tabs" aria-label={locale === 'ru' ? 'Сведения о компоненте' : 'Component details'}>
         {(workspaceMode ? ['overview', 'scaling', 'notes'] as const : ['overview', 'contract', 'scaling'] as const).map((value) => (
-          <button key={value} type="button" className={tab === value ? 'is-active' : ''} onClick={() => setTab(value)}>
+          <button key={value} type="button" className={visibleTab === value ? 'is-active' : ''} onClick={() => setTab(value)}>
             {value === 'notes'
               ? workspaceText.notes
               : value === 'scaling' && workspaceMode
@@ -173,7 +177,7 @@ export function ComponentInspector({
       </nav>
 
       <div className="inspector-content">
-        {tab === 'overview' && (
+        {visibleTab === 'overview' && (
           <>
             <section>
               <span className="inspector-kicker"><Network size={14} /> {text.role}</span>
@@ -186,7 +190,7 @@ export function ComponentInspector({
             <p className="inspector-decision">{copy.decision}</p>
           </>
         )}
-        {tab === 'contract' && (
+        {visibleTab === 'contract' && (
           <section>
             <span className="inspector-kicker"><Braces size={14} /> {text.dataContract}</span>
             <dl className="contract-list">
@@ -196,7 +200,7 @@ export function ComponentInspector({
             </dl>
           </section>
         )}
-        {tab === 'scaling' && (
+        {visibleTab === 'scaling' && (
           <section className="topology-editor">
             <span className="inspector-kicker">{text.topology}</span>
             {canReplicate && (
@@ -223,7 +227,7 @@ export function ComponentInspector({
             <p className="topology-hint">{text.topologyHint}</p>
           </section>
         )}
-        {tab === 'notes' && workspaceMode && onNodeDataChange && (
+        {visibleTab === 'notes' && workspaceMode && onNodeDataChange && (
           <section className="workspace-node-notes">
             <span className="inspector-kicker">{workspaceText.componentContext}</span>
             <textarea

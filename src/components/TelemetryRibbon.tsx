@@ -1,14 +1,15 @@
 import type { Locale, TelemetryPoint } from '../domain/system'
 import { formatMetric } from '../simulation/engine'
 
+type MetricKey = 'throughput' | 'p99' | 'errorRate' | 'dbCpu'
+
 interface TelemetryRibbonProps {
   history: TelemetryPoint[]
   labels?: Partial<Record<MetricKey, string>>
   values?: Partial<Record<MetricKey, string>>
+  hiddenSparklines?: readonly MetricKey[]
   locale: Locale
 }
-
-type MetricKey = 'throughput' | 'p99' | 'errorRate' | 'dbCpu'
 
 const metrics: Array<{ key: MetricKey; label: string; tone: string }> = [
   { key: 'throughput', label: 'Throughput', tone: 'healthy' },
@@ -37,7 +38,13 @@ function Sparkline({ values, tone }: { values: number[]; tone: string }) {
   )
 }
 
-export function TelemetryRibbon({ history, labels = {}, values = {}, locale }: TelemetryRibbonProps) {
+export function TelemetryRibbon({
+  history,
+  labels = {},
+  values = {},
+  hiddenSparklines = [],
+  locale,
+}: TelemetryRibbonProps) {
   const latest = history[history.length - 1]
   if (!latest) return null
 
@@ -51,7 +58,9 @@ export function TelemetryRibbon({ history, labels = {}, values = {}, locale }: T
               : label)}
           </span>
           <strong>{values[key] ?? formatMetric(latest[key], key)}</strong>
-          <Sparkline values={history.map((point) => point[key])} tone={tone} />
+          {!hiddenSparklines.includes(key) && (
+            <Sparkline values={history.map((point) => point[key])} tone={tone} />
+          )}
         </div>
       ))}
     </section>

@@ -111,6 +111,7 @@ import {
 } from './workspace/document'
 import { WorkspaceRepository } from './workspace/repository'
 import { workspaceCopy } from './workspace/copy'
+import { createWorkspaceTelemetry } from './workspace/telemetry'
 import {
   downloadWorkspaceFile,
   downloadWorkspacePng,
@@ -193,7 +194,7 @@ export function App() {
   const [fault, setFault] = useState<FaultMode>('none')
   const [faultTarget, setFaultTarget] = useState<FaultTarget | null>(null)
   const [playing, setPlaying] = useState(true)
-  const simulatedLoad = useTrafficRamp(load, playing)
+  const simulatedLoad = useTrafficRamp(load, playing, appMode)
   const [tick, setTick] = useState(0)
   const [elapsedSeconds, setElapsedSeconds] = useState(18 * 60 + 42)
   const [interviewerOpen, setInterviewerOpen] = useState(false)
@@ -314,6 +315,8 @@ export function App() {
     .map((edge) => `${edge.id}:${edge.source}>${edge.target}`)
     .sort()
     .join('|')}`
+  const judgeRevision = JSON.stringify({ challengeId, graphTopology, capacity })
+  const interviewJudgeRevisionRef = useRef(judgeRevision)
   const currentWorkspaceFingerprint = useMemo(() => workspaceFingerprint({
     title: workspaceTitle,
     simulationProfile: challengeId,
@@ -562,8 +565,10 @@ export function App() {
   const ignoreReplayAction = useCallback((_event: ReplayEventContentV1) => undefined, [])
 
   useEffect(() => {
+    if (appMode !== 'interview' || interviewJudgeRevisionRef.current === judgeRevision) return
+    interviewJudgeRevisionRef.current = judgeRevision
     setJudgeReport(null)
-  }, [capacity, challengeId, graphTopology])
+  }, [appMode, judgeRevision])
 
   useEffect(() => {
     if (replayAttempt || !playing) return
@@ -950,6 +955,7 @@ export function App() {
     setFault(document.fault)
     setFaultTarget(document.faultTarget ?? null)
     setCapacity({ ...document.capacity })
+    setTelemetry(createWorkspaceTelemetry(document))
     setSelectedNodeId(document.architecture.nodes.find((node) => node.data.kind === 'service')?.id ?? document.architecture.nodes[0]?.id ?? null)
     setSelectedEdgeId(null)
     setInterviewerOpen(false)
@@ -1647,6 +1653,7 @@ export function App() {
     locale,
     context: interviewContext,
     questionRevision: `${locale}:${challengeId}:${fault}:${load}:${criticalPathConnected}`,
+    active: appMode === 'interview',
     replayActive: Boolean(replayAttempt),
     capacity,
     capacityMonthlyCost: capacityReport.cost.total,
@@ -1747,6 +1754,7 @@ export function App() {
           telemetryValues={appMode === 'workspace'
             ? { dbCpu: `$${Math.round((challengeId === 'news-feed' ? newsFeedReport : capacityReport).cost.total).toLocaleString('en-US')}` }
             : undefined}
+          hiddenTelemetrySparklines={appMode === 'workspace' ? ['dbCpu'] : undefined}
           canvasLabel={locale === 'ru'
             ? appMode === 'workspace'
               ? workspaceTitle

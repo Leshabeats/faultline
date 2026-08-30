@@ -9,7 +9,7 @@ const document = createWorkspaceDocument({
   title: 'Payments <platform>',
   simulationProfile: 'url-shortener',
   nodes: seedNodes.map((node) => node.id === 'api'
-    ? { ...node, data: { ...node.data, label: 'Payment & API', notes: 'Use idempotency | keys.' } }
+    ? { ...node, data: { ...node.data, label: 'Payment | API\nPrimary', notes: 'Use idempotency | keys.' } }
     : node),
   edges: seedEdges,
   load: 3,
@@ -32,16 +32,16 @@ describe('workspace exports', () => {
     const markdown = workspaceMarkdown(document, context)
 
     expect(markdown).toContain('# Payments <platform>')
-    expect(markdown).toContain('| Payment & API | service | 1 | 1 | Use idempotency \\| keys. |')
+    expect(markdown).toContain('| Payment \\| API Primary | service | 1 | 1 | Use idempotency \\| keys. |')
     expect(markdown).toContain('Monthly infrastructure: $2,340')
-    expect(markdown).toContain('Payment & API → Redis')
+    expect(markdown).toContain('Payment | API Primary → Redis')
   })
 
   it('escapes user content in the standalone SVG', () => {
     const svg = workspaceSvg(document, context)
 
     expect(svg).toContain('Payments &lt;platform&gt;')
-    expect(svg).toContain('Payment &amp; API')
+    expect(svg).toContain('Payment | API\nPrimary')
     expect(svg).not.toContain('<platform>')
   })
 

@@ -17,9 +17,9 @@ export class WorkspaceRepository {
   ) {}
 
   read(): WorkspaceDocumentV1 | null {
-    const serialized = this.storage.getItem(this.key)
-    if (!serialized || serialized.length > MAX_WORKSPACE_STORAGE_CHARACTERS) return null
     try {
+      const serialized = this.storage.getItem(this.key)
+      if (!serialized || serialized.length > MAX_WORKSPACE_STORAGE_CHARACTERS) return null
       const value: unknown = JSON.parse(serialized)
       return validateWorkspaceDocument(value) ? value : null
     } catch {

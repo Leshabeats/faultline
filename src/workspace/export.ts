@@ -7,6 +7,9 @@ const escapeXml = (value: string) => value
   .replace(/"/g, '&quot;')
   .replace(/'/g, '&apos;')
 
+const markdownInline = (value: string) => value.replace(/\r\n?|\n/g, ' ')
+const markdownCell = (value: string) => markdownInline(value).replace(/\|/g, '\\|')
+
 const filename = (title: string) => {
   const normalized = title
     .trim()
@@ -26,13 +29,13 @@ export function workspaceMarkdown(
   const ru = context.locale === 'ru'
   const nodeById = new Map(document.architecture.nodes.map((node) => [node.id, node]))
   const componentRows = document.architecture.nodes.map((node) => {
-    const notes = node.data.notes?.replace(/\|/g, '\\|').replace(/\n/g, ' ') || '—'
-    return `| ${node.data.label} | ${node.data.kind} | ${node.data.replicas ?? 1} | ${node.data.shards ?? 1} | ${notes} |`
+    const notes = node.data.notes ? markdownCell(node.data.notes) : '—'
+    return `| ${markdownCell(node.data.label)} | ${node.data.kind} | ${node.data.replicas ?? 1} | ${node.data.shards ?? 1} | ${notes} |`
   })
   const connections = document.architecture.edges.map((edge) => {
-    const source = nodeById.get(edge.source)?.data.label ?? edge.source
-    const target = nodeById.get(edge.target)?.data.label ?? edge.target
-    return `- ${source} → ${target}${edge.label ? ` — ${edge.label}` : ''}`
+    const source = markdownInline(nodeById.get(edge.source)?.data.label ?? edge.source)
+    const target = markdownInline(nodeById.get(edge.target)?.data.label ?? edge.target)
+    return `- ${source} → ${target}${edge.label ? ` — ${markdownInline(edge.label)}` : ''}`
   })
 
   return [

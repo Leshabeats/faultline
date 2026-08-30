@@ -43,6 +43,16 @@ describe('WorkspaceRepository', () => {
     expect(new WorkspaceRepository(storage).read()).toBeNull()
   })
 
+  it('treats blocked storage reads as an empty workspace', () => {
+    const repository = new WorkspaceRepository({
+      getItem: () => { throw new Error('Storage access denied') },
+      setItem: () => undefined,
+      removeItem: () => undefined,
+    })
+
+    expect(repository.read()).toBeNull()
+  })
+
   it('rejects a workspace with invalid capacity or dangling fault targets', () => {
     const storage = memoryStorage()
     const document = createWorkspaceDocument({
