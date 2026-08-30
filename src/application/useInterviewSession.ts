@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { CapacityTuning, Locale, TimelineEvent } from '../domain/system'
 import type {
   InterviewAction,
@@ -7,6 +7,12 @@ import type {
 } from '../interview/types'
 import type { ReplayEventContentV1 } from '../replay'
 import { applicationCopy, defenseCopy } from './copy'
+import {
+  acceptsInterviewResponse,
+  beginInterviewRequest,
+  synchronizeInterviewRequestScope,
+  type InterviewRequestScope,
+} from './interviewRequestScope'
 
 interface UseInterviewSessionInput {
   interviewer: InterviewResponder
@@ -54,20 +60,46 @@ export function useInterviewSession({
   const contextRef = useRef(context)
   const questionRevisionRef = useRef<string | null>(null)
   const busyTimerRef = useRef<number | null>(null)
+  const requestScopeRef = useRef<InterviewRequestScope<InterviewResponder>>({
+    enabled: active && !replayActive,
+    provider: interviewer,
+    revision: questionRevision,
+    generation: 0,
+  })
   contextRef.current = context
+
+  useLayoutEffect(() => {
+    const previousScope = requestScopeRef.current
+    const enabled = active && !replayActive
+    requestScopeRef.current = synchronizeInterviewRequestScope(previousScope, {
+      enabled,
+      provider: interviewer,
+      revision: questionRevision,
+    })
+  }, [active, interviewer, questionRevision, replayActive])
 
   useEffect(() => () => {
     if (busyTimerRef.current !== null) window.clearTimeout(busyTimerRef.current)
   }, [])
 
   useEffect(() => {
+    if (busyTimerRef.current !== null) window.clearTimeout(busyTimerRef.current)
+    busyTimerRef.current = null
+    setBusy(false)
+  }, [active, interviewer, questionRevision, replayActive])
+
+  useEffect(() => {
     if (!active || replayActive || questionRevisionRef.current === questionRevision) return
     let cancelled = false
+    const scope = beginInterviewRequest(requestScopeRef.current)
+    const generation = scope.generation
+    requestScopeRef.current = scope
     setFeedback('')
     interviewer
       .respond({ action: 'continue', context: contextRef.current })
       .then((response) => {
-        if (!cancelled) {
+        const current = requestScopeRef.current
+        if (!cancelled && acceptsInterviewResponse(current, generation)) {
           questionRevisionRef.current = questionRevision
           setPrompt(response.prompt)
         }
@@ -78,6 +110,10 @@ export function useInterviewSession({
   }, [active, interviewer, questionRevision, replayActive])
 
   const runAction = useCallback(async (action: InterviewAction) => {
+    if (!requestScopeRef.current.enabled) return
+    const scope = beginInterviewRequest(requestScopeRef.current)
+    const generation = scope.generation
+    requestScopeRef.current = scope
     setBusy(true)
     try {
       const response = await interviewer.respond({
@@ -85,6 +121,8 @@ export function useInterviewSession({
         answer: action === 'answer' ? answer : undefined,
         context: contextRef.current,
       })
+      const current = requestScopeRef.current
+      if (!acceptsInterviewResponse(current, generation)) return
       setPrompt(response.prompt)
       setFeedback(response.message)
       if (action === 'answer') {
@@ -118,8 +156,12 @@ export function useInterviewSession({
         setAnswer('')
       }
     } finally {
+      const current = requestScopeRef.current
+      if (!acceptsInterviewResponse(current, generation)) return
       if (busyTimerRef.current !== null) window.clearTimeout(busyTimerRef.current)
-      busyTimerRef.current = window.setTimeout(() => setBusy(false), 180)
+      busyTimerRef.current = window.setTimeout(() => {
+        if (acceptsInterviewResponse(requestScopeRef.current, generation)) setBusy(false)
+      }, 180)
     }
   }, [addEvent, answer, interviewer, locale, prompt, recordAction])
 
