@@ -30,9 +30,11 @@ import {
   toReplayNode,
 } from '../replay/presentation'
 import { applicationCopy, componentAddedCopy } from '../application/copy'
+import { canAddWorkspaceItem, WORKSPACE_LIMITS } from '../workspace/limits'
 
 interface UseArchitectureEditorInput {
   nodes: SystemFlowNode[]
+  edges: SystemFlowEdge[]
   load: LoadMultiplier
   playing: boolean
   locale: Locale
@@ -50,6 +52,7 @@ interface UseArchitectureEditorInput {
 /** Owns editable-canvas commands and their replay representation. */
 export function useArchitectureEditor({
   nodes,
+  edges,
   load,
   playing,
   locale,
@@ -114,6 +117,14 @@ export function useArchitectureEditor({
 
   const onConnect = useCallback((connection: Connection) => {
     if (!connection.source || !connection.target) return
+    if (!canAddWorkspaceItem(edges.length, WORKSPACE_LIMITS.edges)) {
+      addEvent(
+        copy.workspaceLimitReached,
+        copy.workspaceEdgeLimitDetail(WORKSPACE_LIMITS.edges),
+        'warning',
+      )
+      return
+    }
     const edge: SystemFlowEdge = {
       ...connection,
       id: createStableId('edge'),
@@ -132,9 +143,17 @@ export function useArchitectureEditor({
         tone: 'healthy',
       },
     })
-  }, [addEvent, copy.connectionAdded, copy.topologyRecalculated, load, playing, recordAction, setEdges])
+  }, [addEvent, copy, edges.length, load, playing, recordAction, setEdges])
 
   const addNode = useCallback((kind: ComponentKind) => {
+    if (!canAddWorkspaceItem(nodes.length, WORKSPACE_LIMITS.nodes)) {
+      addEvent(
+        copy.workspaceLimitReached,
+        copy.workspaceNodeLimitDetail(WORKSPACE_LIMITS.nodes),
+        'warning',
+      )
+      return
+    }
     setActiveKind(kind)
     const instance = nodes.filter((node) => node.data.kind === kind).length + 1
     const baseLabel = componentLabels[locale][kind]
@@ -171,7 +190,7 @@ export function useArchitectureEditor({
         tone: 'healthy',
       },
     })
-  }, [addEvent, load, locale, nodes, recordAction, setActiveKind, setNodes, snapshot.nodeDetails, snapshot.nodeHealth])
+  }, [addEvent, copy, load, locale, nodes, recordAction, setActiveKind, setNodes, snapshot.nodeDetails, snapshot.nodeHealth])
 
   const changeNodeTopology = useCallback((nodeId: string, input: NodeTopology) => {
     const node = nodes.find((item) => item.id === nodeId)

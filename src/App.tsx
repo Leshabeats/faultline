@@ -724,6 +724,7 @@ export function App() {
     changeNodeTopology,
   } = useArchitectureEditor({
     nodes,
+    edges,
     load,
     playing,
     locale,

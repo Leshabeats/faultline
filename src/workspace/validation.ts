@@ -12,6 +12,7 @@ import {
   type WorkspaceEdgeV1,
   type WorkspaceNodeV1,
 } from './types'
+import { WORKSPACE_LIMITS } from './limits'
 
 const componentKinds: ComponentKind[] = [
   'client', 'gateway', 'service', 'cache', 'queue', 'database', 'region',
@@ -107,7 +108,10 @@ export function validateWorkspaceDocument(value: unknown): value is WorkspaceDoc
   if (value.faultTarget !== undefined && !isFaultTarget(value.faultTarget)) return false
   if (!isCapacityTuning(value.capacity) || !isRecord(value.architecture)) return false
   if (!Array.isArray(value.architecture.nodes) || !Array.isArray(value.architecture.edges)) return false
-  if (value.architecture.nodes.length > 200 || value.architecture.edges.length > 400) return false
+  if (
+    value.architecture.nodes.length > WORKSPACE_LIMITS.nodes ||
+    value.architecture.edges.length > WORKSPACE_LIMITS.edges
+  ) return false
   if (!value.architecture.nodes.every(isWorkspaceNode) || !value.architecture.edges.every(isWorkspaceEdge)) return false
 
   const nodeIds = new Set(value.architecture.nodes.map((node) => node.id))
