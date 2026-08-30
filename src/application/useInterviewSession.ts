@@ -62,13 +62,15 @@ export function useInterviewSession({
 
   useEffect(() => {
     if (!active || replayActive || questionRevisionRef.current === questionRevision) return
-    questionRevisionRef.current = questionRevision
     let cancelled = false
     setFeedback('')
     interviewer
       .respond({ action: 'continue', context: contextRef.current })
       .then((response) => {
-        if (!cancelled) setPrompt(response.prompt)
+        if (!cancelled) {
+          questionRevisionRef.current = questionRevision
+          setPrompt(response.prompt)
+        }
       })
     return () => {
       cancelled = true
