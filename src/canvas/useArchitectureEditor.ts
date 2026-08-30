@@ -212,7 +212,7 @@ export function useArchitectureEditor({
           ? { ...item, data: { ...item.data, replicas: patch.replicas, shards: patch.shards } }
           : item
       }))
-      setCapacity(nextCapacity)
+      if (databaseTopologyScope === 'all') setCapacity(nextCapacity)
       recordAction({
         type: 'capacity.changed',
         source: 'user',

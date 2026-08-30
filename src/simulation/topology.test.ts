@@ -5,6 +5,7 @@ import {
   alignDatabaseReplication,
   databaseReplicationMatches,
   databaseTopologyUpdates,
+  routedDatabaseReadReplicas,
 } from '../domain/topology'
 import { analyzeTopology } from './topology'
 
@@ -123,5 +124,24 @@ describe('topology analysis', () => {
       { nodeId: primary.id, replicas: 2, shards: 1 },
       { nodeId: analytics.id, replicas: 2, shards: 4 },
     ])
+  })
+
+  it('derives global capacity from the first routed database only', () => {
+    const primary = seedNodes.find((node) => node.data.kind === 'database')!
+    const analytics = {
+      ...primary,
+      id: 'analytics-database',
+      data: { ...primary.data, replicas: 3 },
+    }
+    const nodes = [
+      ...seedNodes.map((node) => node.id === primary.id
+        ? { ...node, data: { ...node.data, replicas: 1 } }
+        : node),
+      analytics,
+    ]
+
+    expect(routedDatabaseReadReplicas(nodes, [primary.id])).toBe(0)
+    expect(routedDatabaseReadReplicas(nodes, [analytics.id])).toBe(2)
+    expect(routedDatabaseReadReplicas(nodes, [])).toBeUndefined()
   })
 })

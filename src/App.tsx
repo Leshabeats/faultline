@@ -49,6 +49,7 @@ import { useArchitectureEditor } from './canvas/useArchitectureEditor'
 import {
   databaseReplicas,
   normalizeNodeTopology,
+  routedDatabaseReadReplicas,
 } from './domain/topology'
 import {
   DEFAULT_CAPACITY_TUNING,
@@ -340,6 +341,13 @@ export function App() {
     [fault, faultTarget, graphTopology],
   )
   const simulationTopology = targetedFaultImpact.topology
+  const simulationCapacity = useMemo(() => {
+    if (appMode !== 'workspace') return capacity
+    const readReplicas = routedDatabaseReadReplicas(nodes, routedNodeIds)
+    return readReplicas === undefined || readReplicas === capacity.readReplicas
+      ? capacity
+      : { ...capacity, readReplicas }
+  }, [appMode, capacity, componentTopology, routedNodeIds])
 
   useEffect(() => {
     if (!faultTarget) return
@@ -365,21 +373,21 @@ export function App() {
         replicaCounts: simulationTopology.replicaCounts,
         criticalPathConnected: simulationTopology.criticalPathConnected,
         faultImpact: targetedFaultImpact.summary,
-        capacity,
+        capacity: simulationCapacity,
       }),
-    [capacity, challengeId, edges.length, effectiveLoad, fault, nodes.length, simulationTopology, targetedFaultImpact.summary, tick],
+    [challengeId, edges.length, effectiveLoad, fault, nodes.length, simulationCapacity, simulationTopology, targetedFaultImpact.summary, tick],
   )
 
   const capacityReport = useMemo(
     () => estimateCapacity({
       loadMultiplier: effectiveLoad,
       fault,
-      tuning: capacity,
+      tuning: simulationCapacity,
       componentCounts: simulationTopology.componentCounts,
       replicaCounts: simulationTopology.replicaCounts,
       criticalPathConnected: simulationTopology.criticalPathConnected,
     }),
-    [capacity, effectiveLoad, fault, simulationTopology],
+    [effectiveLoad, fault, simulationCapacity, simulationTopology],
   )
   const baselineCapacityReport = useMemo(
     () => estimateCapacity({
@@ -407,11 +415,11 @@ export function App() {
     () => estimateNewsFeed({
       loadMultiplier: effectiveLoad,
       fault,
-      tuning: capacity,
+      tuning: simulationCapacity,
       componentCounts: simulationTopology.componentCounts,
       criticalPathConnected: simulationTopology.criticalPathConnected,
     }),
-    [capacity, effectiveLoad, fault, simulationTopology],
+    [effectiveLoad, fault, simulationCapacity, simulationTopology],
   )
   const baselineNewsFeedReport = useMemo(
     () => estimateNewsFeed({
@@ -993,10 +1001,14 @@ export function App() {
     if (appMode !== 'workspace') return
     try {
       const document = createCurrentWorkspaceDocument()
-      workspaceRepository.save(document)
+      if (!saveWorkspaceBestEffort(workspaceRepository, document)) {
+        setWorkspaceSaveStatus('error')
+        return
+      }
       workspaceMetadataRef.current = { id: document.id, createdAt: document.createdAt }
     } catch {
       setWorkspaceSaveStatus('error')
+      return
     }
 
     const previous = liveStateBeforeWorkspaceRef.current

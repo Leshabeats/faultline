@@ -77,6 +77,19 @@ export const databaseReadReplicas = (
 
 export const databaseReplicas = (readReplicas: ReadReplicaCount) => readReplicas + 1
 
+export function routedDatabaseReadReplicas<Node extends TopologyNode>(
+  nodes: readonly Node[],
+  routedNodeIds: readonly string[],
+): ReadReplicaCount | undefined {
+  const nodesById = new Map(nodes.map((node) => [node.id, node]))
+  const database = routedNodeIds
+    .map((nodeId) => nodesById.get(nodeId))
+    .find((node) => node?.data.kind === 'database')
+  return database
+    ? databaseReadReplicas(normalizeNodeTopology('database', database.data))
+    : undefined
+}
+
 export function databaseTopologyUpdates<Node extends TopologyNode>(
   nodes: readonly Node[],
   selectedNodeId: string,
