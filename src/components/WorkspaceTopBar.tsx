@@ -1,6 +1,7 @@
-import { Braces, FileText, Image, Languages, ScanLine, Share, X } from 'lucide-react'
+import { Braces, CircleHelp, FileText, Image, Languages, ScanLine, Share, X } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import type { Locale } from '../domain/system'
+import { onboardingCopy } from '../onboarding/copy'
 import { workspaceCopy } from '../workspace/copy'
 import type { WorkspaceExportFormat } from '../workspace/types'
 import { FaultlineMark } from './FaultlineMark'
@@ -14,6 +15,7 @@ interface WorkspaceTopBarProps {
   onTitleChange: (title: string) => void
   onLocaleChange: (locale: Locale) => void
   onOpenInterview: () => void
+  onOpenGuide: () => void
   onExportToggle: () => void
   onExport: (format: WorkspaceExportFormat) => void
 }
@@ -34,10 +36,12 @@ export function WorkspaceTopBar({
   onTitleChange,
   onLocaleChange,
   onOpenInterview,
+  onOpenGuide,
   onExportToggle,
   onExport,
 }: WorkspaceTopBarProps) {
   const text = workspaceCopy[locale]
+  const guideText = onboardingCopy[locale]
   const exportRef = useRef<HTMLDivElement>(null)
   const status = saveStatus === 'saving'
     ? text.saving
@@ -89,6 +93,15 @@ export function WorkspaceTopBar({
       </div>
       <span className="workspace-local-note">{text.storedLocally}</span>
       <div className="topbar-actions workspace-actions">
+        <button
+          type="button"
+          className="icon-button guide-button"
+          aria-label={guideText.helpAria}
+          title={guideText.help}
+          onClick={onOpenGuide}
+        >
+          <CircleHelp size={19} />
+        </button>
         <button
           type="button"
           className="icon-button locale-button"

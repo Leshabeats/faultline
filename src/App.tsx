@@ -19,6 +19,7 @@ import { ReplayPanel } from './components/ReplayPanel'
 import { ReplayTimeline } from './components/ReplayTimeline'
 import { TopBar } from './components/TopBar'
 import { WorkspaceTopBar } from './components/WorkspaceTopBar'
+import { OnboardingGuide } from './components/OnboardingGuide'
 import {
   challengeOptions,
   clonePackEdges,
@@ -120,6 +121,7 @@ import type {
   WorkspaceExportContext,
   WorkspaceExportFormat,
 } from './workspace/types'
+import { completeOnboarding, hasCompletedOnboarding } from './onboarding/progress'
 
 const formatClock = (elapsedSeconds: number) => {
   const minutes = Math.floor(elapsedSeconds / 60)
@@ -173,6 +175,13 @@ export function App() {
   const [locale, setLocale] = useState<Locale>(initialLocale)
   const copy = applicationCopy[locale]
   const [appMode, setAppMode] = useState<AppMode>('interview')
+  const [onboardingOpen, setOnboardingOpen] = useState(() => {
+    try {
+      return !hasCompletedOnboarding(window.localStorage)
+    } catch {
+      return true
+    }
+  })
   const [challengeId, setChallengeId] = useState<ScenarioId>('url-shortener')
   const activePack = getChallengePack(challengeId)
   const [nodes, setNodes] = useState<SystemFlowNode[]>(() => clonePackNodes(getChallengePack('url-shortener')))
@@ -1665,6 +1674,7 @@ export function App() {
           onTitleChange={setWorkspaceTitle}
           onLocaleChange={setLocale}
           onOpenInterview={openInterviewMode}
+          onOpenGuide={() => setOnboardingOpen(true)}
           onExportToggle={() => {
             setWorkspaceExportError(undefined)
             setWorkspaceExportOpen((value) => !value)
@@ -1707,6 +1717,7 @@ export function App() {
         replayDurationSeconds={Math.floor((replayAttempt?.durationMs ?? 0) / 1000)}
         onExitReplay={exitReplay}
         onOpenWorkspace={openWorkspace}
+        onOpenGuide={() => setOnboardingOpen(true)}
       />}
       <div className="workspace">
         <ArchitectureCanvas
@@ -1950,6 +1961,23 @@ export function App() {
         onCopy={() => void copyPublicLink()}
         onUnpublish={publishUrl ? () => void unpublishReplay() : undefined}
       />
+      {onboardingOpen && (
+        <OnboardingGuide
+          locale={locale}
+          open
+          currentMode={appMode}
+          onDismiss={() => {
+            try { completeOnboarding(window.localStorage, appMode) } catch { /* optional */ }
+            setOnboardingOpen(false)
+          }}
+          onStart={(mode) => {
+            try { completeOnboarding(window.localStorage, mode) } catch { /* optional */ }
+            setOnboardingOpen(false)
+            if (mode === 'workspace') openWorkspace()
+            else openInterviewMode()
+          }}
+        />
+      )}
       <div className="screen-reader-status" aria-live="polite">
         {appMode === 'workspace'
           ? `${workspaceCopy[locale].workspace} ${workspaceTitle}. ${workspaceCopy[locale].statusAnnouncement[workspaceSaveStatus]}`

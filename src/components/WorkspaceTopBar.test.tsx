@@ -13,6 +13,7 @@ describe('WorkspaceTopBar', () => {
         onTitleChange={vi.fn()}
         onLocaleChange={vi.fn()}
         onOpenInterview={vi.fn()}
+        onOpenGuide={vi.fn()}
         onExportToggle={vi.fn()}
         onExport={vi.fn()}
       />,
@@ -23,6 +24,7 @@ describe('WorkspaceTopBar', () => {
     expect(html).toContain('Изображение PNG')
     expect(html).toContain('Описание Markdown')
     expect(html).toContain('Изменения сохранены локально.')
+    expect(html).toContain('Как пользоваться Faultline')
     expect(html).not.toContain('Export workspace')
   })
 })

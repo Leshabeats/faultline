@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { Check, ChevronDown, Gauge, History, Languages, LogOut, PanelRightClose, Pause, Play, Share2 } from 'lucide-react'
+import { Check, ChevronDown, CircleHelp, Gauge, History, Languages, LogOut, PanelRightClose, Pause, Play, Share2 } from 'lucide-react'
 import type { Locale, ScenarioId } from '../domain/system'
 import { FaultlineMark } from './FaultlineMark'
 import { UI_COPY } from '../i18n'
+import { onboardingCopy } from '../onboarding/copy'
 import { workspaceCopy } from '../workspace/copy'
 
 interface TopBarProps {
@@ -28,6 +29,7 @@ interface TopBarProps {
   replayDurationSeconds?: number
   onExitReplay?: () => void
   onOpenWorkspace?: () => void
+  onOpenGuide?: () => void
 }
 
 const formatTime = (value: number) => {
@@ -59,10 +61,12 @@ export function TopBar({
   replayDurationSeconds = 0,
   onExitReplay,
   onOpenWorkspace,
+  onOpenGuide,
 }: TopBarProps) {
   const [challengeMenuOpen, setChallengeMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const text = UI_COPY[locale]
+  const guideText = onboardingCopy[locale]
 
   useEffect(() => {
     if (!challengeMenuOpen) return
@@ -74,7 +78,7 @@ export function TopBar({
   }, [challengeMenuOpen])
 
   return (
-    <header className="topbar interview-topbar">
+    <header className={`topbar interview-topbar ${challengeMenuOpen ? 'menu-open' : ''}`}>
       <FaultlineMark />
       <nav className="mode-switch" aria-label={locale === 'ru' ? 'Режим Faultline' : 'Faultline mode'}>
         <button type="button" className="is-active" aria-current="page">{workspaceCopy[locale].interview}</button>
@@ -120,6 +124,18 @@ export function TopBar({
             >
               {text.currentBrief}
             </button>
+            {onOpenGuide && (
+              <button
+                type="button"
+                className="challenge-brief-action mobile-guide-action"
+                onClick={() => {
+                  setChallengeMenuOpen(false)
+                  onOpenGuide()
+                }}
+              >
+                <CircleHelp size={15} /> {guideText.help}
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -134,6 +150,17 @@ export function TopBar({
         {replayMode && <span className="replay-duration">/ {formatTime(replayDurationSeconds)}</span>}
       </span>
       <div className="topbar-actions">
+        {!replayMode && onOpenGuide && (
+          <button
+            type="button"
+            aria-label={guideText.helpAria}
+            title={guideText.help}
+            className="icon-button guide-button desktop-guide-button"
+            onClick={onOpenGuide}
+          >
+            <CircleHelp size={19} />
+          </button>
+        )}
         <button
           type="button"
           aria-label={text.history}
