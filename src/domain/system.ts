@@ -51,6 +51,8 @@ export interface SystemNodeData extends Record<string, unknown> {
   replicas?: number
   /** Data partitions owned by this logical component. */
   shards?: number
+  /** Freeform workspace context exported with the architecture. */
+  notes?: string
 }
 
 export interface SimulationMetrics {

@@ -6,12 +6,20 @@ const easeInOutCubic = (value: number) => value < 0.5
   ? 4 * value * value * value
   : 1 - ((-2 * value + 2) ** 3) / 2
 
-export function useTrafficRamp(target: number, running: boolean) {
+export function useTrafficRamp(target: number, running: boolean, resetKey = 'default') {
   const [current, setCurrent] = useState(target)
+  const [appliedResetKey, setAppliedResetKey] = useState(resetKey)
   const currentRef = useRef(current)
-  currentRef.current = current
+  const resetRequested = appliedResetKey !== resetKey
+  const displayed = resetRequested ? target : current
+  currentRef.current = displayed
 
   useEffect(() => {
+    if (resetRequested) {
+      setAppliedResetKey(resetKey)
+      setCurrent(target)
+      return
+    }
     if (!running) return
     const from = currentRef.current
     if (Math.abs(from - target) < 0.01) {
@@ -30,7 +38,7 @@ export function useTrafficRamp(target: number, running: boolean) {
     }
     frame = window.requestAnimationFrame(step)
     return () => window.cancelAnimationFrame(frame)
-  }, [running, target])
+  }, [appliedResetKey, resetKey, resetRequested, running, target])
 
-  return current
+  return displayed
 }

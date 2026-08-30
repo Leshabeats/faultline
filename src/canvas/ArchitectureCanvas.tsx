@@ -57,7 +57,11 @@ interface ArchitectureCanvasProps {
   fitViewKey?: string
   faults: readonly FaultMode[]
   telemetryLabels?: Partial<Record<'throughput' | 'p99' | 'errorRate' | 'dbCpu', string>>
+  telemetryValues?: Partial<Record<'throughput' | 'p99' | 'errorRate' | 'dbCpu', string>>
+  hiddenTelemetrySparklines?: readonly ('throughput' | 'p99' | 'errorRate' | 'dbCpu')[]
   canvasLabel?: string
+  workspaceMode?: boolean
+  onNodeDataChange?: (nodeId: string, patch: { label?: string; notes?: string }) => void
 }
 
 export function ArchitectureCanvas({
@@ -90,7 +94,11 @@ export function ArchitectureCanvas({
   fitViewKey,
   faults,
   telemetryLabels,
+  telemetryValues,
+  hiddenTelemetrySparklines,
   canvasLabel = 'System architecture',
+  workspaceMode = false,
+  onNodeDataChange,
 }: ArchitectureCanvasProps) {
   const flowRef = useRef<ReactFlowInstance<SystemFlowNode, SystemFlowEdge> | null>(null)
 
@@ -106,7 +114,6 @@ export function ArchitectureCanvas({
     <main className={`canvas-region ${selectedNode || selectedEdge ? 'inspector-visible' : ''}`} aria-label={locale === 'ru' ? 'Схема архитектуры системы' : 'System architecture canvas'}>
       <div className="flow-surface">
         <ReactFlow<SystemFlowNode, SystemFlowEdge>
-          key={fitViewKey}
           nodes={nodes}
           edges={edges}
           nodeTypes={nodeTypes}
@@ -151,7 +158,13 @@ export function ArchitectureCanvas({
           />
         </ReactFlow>
         {!readOnly && <ComponentDock activeKind={activeKind} onAdd={onAddNode} locale={locale} />}
-        {!readOnly && <TelemetryRibbon history={telemetry} labels={telemetryLabels} locale={locale} />}
+        {!readOnly && <TelemetryRibbon
+          history={telemetry}
+          labels={telemetryLabels}
+          values={telemetryValues}
+          hiddenSparklines={hiddenTelemetrySparklines}
+          locale={locale}
+        />}
         {!readOnly && <SimulationControls
           load={load}
           effectiveLoad={effectiveLoad}
@@ -185,11 +198,13 @@ export function ArchitectureCanvas({
             node={selectedNode}
             scenario={scenario}
             locale={locale}
+            workspaceMode={workspaceMode}
             fault={fault}
             faultTarget={faultTarget}
             onClose={onInspectorClose}
             onFaultChange={onFaultChange}
             onTopologyChange={onTopologyChange}
+            onNodeDataChange={onNodeDataChange}
           />)}
     </main>
   )

@@ -18,6 +18,7 @@ import type {
 } from '../domain/system'
 import {
   databaseReadReplicas,
+  databaseTopologyUpdates,
   normalizeNodeTopology,
   type NodeTopology,
 } from '../domain/topology'
@@ -29,9 +30,11 @@ import {
   toReplayNode,
 } from '../replay/presentation'
 import { applicationCopy, componentAddedCopy } from '../application/copy'
+import { canAddWorkspaceItem, WORKSPACE_LIMITS } from '../workspace/limits'
 
 interface UseArchitectureEditorInput {
   nodes: SystemFlowNode[]
+  edges: SystemFlowEdge[]
   load: LoadMultiplier
   playing: boolean
   locale: Locale
@@ -43,11 +46,13 @@ interface UseArchitectureEditorInput {
   setActiveKind: Dispatch<SetStateAction<ComponentKind>>
   addEvent: (title: string, detail: string, tone?: TimelineEvent['tone']) => void
   recordAction: (event: ReplayEventContentV1) => unknown
+  databaseTopologyScope: 'all' | 'selected'
 }
 
 /** Owns editable-canvas commands and their replay representation. */
 export function useArchitectureEditor({
   nodes,
+  edges,
   load,
   playing,
   locale,
@@ -59,6 +64,7 @@ export function useArchitectureEditor({
   setActiveKind,
   addEvent,
   recordAction,
+  databaseTopologyScope,
 }: UseArchitectureEditorInput) {
   const copy = applicationCopy[locale]
 
@@ -111,6 +117,14 @@ export function useArchitectureEditor({
 
   const onConnect = useCallback((connection: Connection) => {
     if (!connection.source || !connection.target) return
+    if (!canAddWorkspaceItem(edges.length, WORKSPACE_LIMITS.edges)) {
+      addEvent(
+        copy.workspaceLimitReached,
+        copy.workspaceEdgeLimitDetail(WORKSPACE_LIMITS.edges),
+        'warning',
+      )
+      return
+    }
     const edge: SystemFlowEdge = {
       ...connection,
       id: createStableId('edge'),
@@ -129,9 +143,17 @@ export function useArchitectureEditor({
         tone: 'healthy',
       },
     })
-  }, [addEvent, copy.connectionAdded, copy.topologyRecalculated, load, playing, recordAction, setEdges])
+  }, [addEvent, copy, edges.length, load, playing, recordAction, setEdges])
 
   const addNode = useCallback((kind: ComponentKind) => {
+    if (!canAddWorkspaceItem(nodes.length, WORKSPACE_LIMITS.nodes)) {
+      addEvent(
+        copy.workspaceLimitReached,
+        copy.workspaceNodeLimitDetail(WORKSPACE_LIMITS.nodes),
+        'warning',
+      )
+      return
+    }
     setActiveKind(kind)
     const instance = nodes.filter((node) => node.data.kind === kind).length + 1
     const baseLabel = componentLabels[locale][kind]
@@ -168,7 +190,7 @@ export function useArchitectureEditor({
         tone: 'healthy',
       },
     })
-  }, [addEvent, load, locale, nodes, recordAction, setActiveKind, setNodes, snapshot.nodeDetails, snapshot.nodeHealth])
+  }, [addEvent, copy, load, locale, nodes, recordAction, setActiveKind, setNodes, snapshot.nodeDetails, snapshot.nodeHealth])
 
   const changeNodeTopology = useCallback((nodeId: string, input: NodeTopology) => {
     const node = nodes.find((item) => item.id === nodeId)
@@ -178,22 +200,19 @@ export function useArchitectureEditor({
     if (node.data.kind === 'database') {
       const readReplicas = databaseReadReplicas({ replicas })
       const nextCapacity = { ...capacity, readReplicas }
-      const topology = nodes
-        .filter((item) => item.data.kind === 'database')
-        .map((item) => ({
-          nodeId: item.id,
-          replicas,
-          shards: item.id === nodeId
-            ? shards
-            : normalizeNodeTopology('database', item.data).shards,
-        }))
+      const topology = databaseTopologyUpdates(
+        nodes,
+        nodeId,
+        { replicas, shards },
+        databaseTopologyScope,
+      )
       setNodes((current) => current.map((item) => {
         const patch = topology.find((candidate) => candidate.nodeId === item.id)
         return patch
           ? { ...item, data: { ...item.data, replicas: patch.replicas, shards: patch.shards } }
           : item
       }))
-      setCapacity(nextCapacity)
+      if (databaseTopologyScope === 'all') setCapacity(nextCapacity)
       recordAction({
         type: 'capacity.changed',
         source: 'user',
@@ -236,7 +255,7 @@ export function useArchitectureEditor({
         },
       })
     }
-  }, [addEvent, capacity, locale, nodes, recordAction, setCapacity, setNodes])
+  }, [addEvent, capacity, databaseTopologyScope, locale, nodes, recordAction, setCapacity, setNodes])
 
   return {
     onNodesChange,

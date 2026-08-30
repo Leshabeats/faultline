@@ -23,6 +23,12 @@ The current release has two coherent challenge packs: a calibrated URL Shortener
 7. Replay the exact architecture, capacity choices, targeted fault, reasoning, and submission sequence.
 8. Publish a redacted Shareable Run and open the public link in a clean browser session.
 
+## Quick start
+
+Faultline opens with a three-step guide on the first visit. Choose **Interview** to work through a seeded challenge, predict the bottleneck, pressure-test the design, submit it, and replay the attempt. Choose **Workspace** to explore your own architecture, attach notes and capacity assumptions, simulate load or an exact fault, and export the result.
+
+Open **How to use** from the help button at any time to run the guide again. The guide remembers completion only on the current device.
+
 The launch topology scores `76/100`. Connecting a complete second cache path makes the cache-outage case pass and raises the score to `83/100`; dropping an unconnected box onto the canvas changes nothing.
 
 ![Faultline submission result](docs/assets/faultline-judge-result.png)
