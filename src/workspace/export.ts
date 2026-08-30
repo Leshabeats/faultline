@@ -114,7 +114,9 @@ export function workspaceSvg(
     const y2 = to.y + to.height / 2
     const cx = (x1 + x2) / 2
     const cy = (y1 + y2) / 2
-    return `<g><path d="M ${x1} ${y1} C ${cx} ${y1}, ${cx} ${y2}, ${x2} ${y2}" fill="none" stroke="#62b775" stroke-width="2" stroke-dasharray="3 6" marker-end="url(#arrow)"/>${edge.label ? `<text x="${cx}" y="${cy - 9}" text-anchor="middle" class="edge-label">${escapeXml(edge.label)}</text>` : ''}</g>`
+    const labelX = cx + (edge.labelOffsetX ?? 0) * scale
+    const labelY = cy - 9 + (edge.labelOffsetY ?? 0) * scale
+    return `<g><path d="M ${x1} ${y1} C ${cx} ${y1}, ${cx} ${y2}, ${x2} ${y2}" fill="none" stroke="#62b775" stroke-width="2" stroke-dasharray="3 6" marker-end="url(#arrow)"/>${edge.label ? `<text data-edge-id="${escapeXml(edge.id)}" x="${labelX}" y="${labelY}" text-anchor="middle" class="edge-label">${escapeXml(edge.label)}</text>` : ''}</g>`
   }).join('')
 
   const nodeMarkup = nodes.map((node) => {

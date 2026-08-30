@@ -123,6 +123,7 @@ export function useInterviewSession({
       })
       const current = requestScopeRef.current
       if (!acceptsInterviewResponse(current, generation)) return
+      questionRevisionRef.current = questionRevision
       setPrompt(response.prompt)
       setFeedback(response.message)
       if (action === 'answer') {
@@ -163,7 +164,7 @@ export function useInterviewSession({
         if (acceptsInterviewResponse(requestScopeRef.current, generation)) setBusy(false)
       }, 180)
     }
-  }, [addEvent, answer, interviewer, locale, prompt, recordAction])
+  }, [addEvent, answer, interviewer, locale, prompt, questionRevision, recordAction])
 
   const defend = useCallback(() => {
     const text = defenseCopy({

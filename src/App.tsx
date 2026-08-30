@@ -224,6 +224,7 @@ export function App() {
   const workspaceMetadataRef = useRef<{ id: string; createdAt?: string }>({
     id: createStableId('workspace'),
   })
+  const workspaceDraftRef = useRef<WorkspaceDocumentV1 | null>(null)
   const [capabilityStore] = useState(createPublicReplayCapabilityStore)
   const [publicReplayClient] = useState(() => new FetchPublicReplayClient())
   const [capabilitiesVersion, setCapabilitiesVersion] = useState(0)
@@ -444,10 +445,10 @@ export function App() {
       load: current.load,
       fault: current.fault,
       faultTarget: current.faultTarget,
-      capacity: current.capacity,
+      capacity: appModeRef.current === 'workspace' ? simulationCapacity : current.capacity,
       now,
     })
-  }, [locale, workspaceTitle])
+  }, [locale, simulationCapacity, workspaceTitle])
 
   useEffect(() => {
     if (appMode !== 'workspace') return
@@ -455,7 +456,9 @@ export function App() {
     const timer = window.setTimeout(() => {
       try {
         const document = createCurrentWorkspaceDocument()
+        workspaceDraftRef.current = document
         workspaceRepository.save(document)
+        workspaceDraftRef.current = null
         workspaceMetadataRef.current = { id: document.id, createdAt: document.createdAt }
         setWorkspaceSaveStatus('saved')
       } catch {
@@ -942,7 +945,8 @@ export function App() {
       historyOpen,
     }
 
-    const stored = workspaceRepository.read()
+    const draft = workspaceDraftRef.current
+    const stored = draft ?? workspaceRepository.read()
     const nextTitle = stored?.title ?? workspaceCopy[locale].defaultTitle
     const document = stored ?? createWorkspaceDocument({
       id: workspaceMetadataRef.current.id,
@@ -973,7 +977,7 @@ export function App() {
     setHistoryOpen(false)
     setWorkspaceExportOpen(false)
     setWorkspaceExportError(undefined)
-    setWorkspaceSaveStatus('saved')
+    setWorkspaceSaveStatus(draft ? 'error' : 'saved')
     setTick(0)
     setPlaying(true)
     setAppMode('workspace')
@@ -1001,11 +1005,14 @@ export function App() {
     if (appMode !== 'workspace') return
     try {
       const document = createCurrentWorkspaceDocument()
-      if (!saveWorkspaceBestEffort(workspaceRepository, document)) {
+      workspaceDraftRef.current = document
+      if (saveWorkspaceBestEffort(workspaceRepository, document)) {
+        workspaceDraftRef.current = null
+        workspaceMetadataRef.current = { id: document.id, createdAt: document.createdAt }
+        setWorkspaceSaveStatus('saved')
+      } else {
         setWorkspaceSaveStatus('error')
-        return
       }
-      workspaceMetadataRef.current = { id: document.id, createdAt: document.createdAt }
     } catch {
       setWorkspaceSaveStatus('error')
       return
@@ -1068,8 +1075,10 @@ export function App() {
         monthlyCost: report.cost.total,
         assumptions: report.assumptions,
       }
+      workspaceDraftRef.current = document
       const saved = saveWorkspaceBestEffort(workspaceRepository, document)
       if (saved) {
+        workspaceDraftRef.current = null
         workspaceMetadataRef.current = { id: document.id, createdAt: document.createdAt }
         setWorkspaceSaveStatus('saved')
       } else {

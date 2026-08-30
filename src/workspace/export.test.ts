@@ -45,6 +45,29 @@ describe('workspace exports', () => {
     expect(svg).not.toContain('<platform>')
   })
 
+  it('applies persisted label offsets to standalone image exports', () => {
+    const withoutOffsets = {
+      ...document,
+      architecture: {
+        ...document.architecture,
+        edges: document.architecture.edges.map((edge) => edge.id === 'api-database'
+          ? { ...edge, labelOffsetX: undefined, labelOffsetY: undefined }
+          : edge),
+      },
+    }
+    const labelPosition = (svg: string) => {
+      const match = svg.match(/data-edge-id="api-database" x="([^"]+)" y="([^"]+)"/)
+      if (!match) throw new Error('api-database label was not rendered')
+      return { x: Number(match[1]), y: Number(match[2]) }
+    }
+
+    const base = labelPosition(workspaceSvg(withoutOffsets, context))
+    const offset = labelPosition(workspaceSvg(document, context))
+
+    expect(offset.x).toBeGreaterThan(base.x)
+    expect(offset.y).toBeGreaterThan(base.y)
+  })
+
   it('serializes a valid editable Faultline document', () => {
     const parsed = JSON.parse(serializeWorkspace(document))
 
