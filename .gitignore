@@ -22,3 +22,29 @@ backend/data/
 *.db-journal
 *.db-wal
 *.db-shm
+
+# Disposable Codex Cloud runtimes and data
+.codex-cloud/
+
+# Generated shared bundles, installed from the pinned additional checkout.
+.agents/.codex-shared-skills.json
+.agents/skills/ai-provider-runtime-hardening/
+.agents/skills/async-job-state-machine-reliability/
+.agents/skills/backend-access-control-idor/
+.agents/skills/backend-clean-architecture-refactor/
+.agents/skills/domain-constants-enums/
+.agents/skills/domain-invariant-error-contracts/
+.agents/skills/engineering-flow-router/
+.agents/skills/fastify-runtime-validation/
+.agents/skills/frontend-i18n-discipline/
+.agents/skills/fsd-boundary-migration-discipline/
+.agents/skills/grill-domain-decisions/
+.agents/skills/high-churn-test-strategy/
+.agents/skills/migration-operational-reliability/
+.agents/skills/pr-slicing-risk-isolation/
+.agents/skills/pre-review-quality-gate/
+.agents/skills/secure-defaults-seed-config/
+.agents/skills/security-best-practices/
+.agents/skills/structured-observability-logging/
+.agents/skills/structured-review-quality/
+.agents/skills/transactional-consistency-recoverability/
